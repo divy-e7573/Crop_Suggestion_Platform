@@ -70,6 +70,9 @@ AI_API_KEY=
 AI_MODEL=
 ```
 
+Only `CORS_ALLOWED_ORIGINS` is needed for Phase 3; the other variables are
+declared ahead of the phases that use them.
+
 Only variables prefixed with `VITE_` are exposed to the browser bundle. Never put a
 database URL or a secret in the frontend environment file.
 
@@ -85,8 +88,78 @@ npm run dev:backend
 npm run dev:frontend
 ```
 
-The backend currently returns `404` for every path because no API route exists yet;
-the first route (`GET /api/health`) arrives in Phase 3.
+The backend serves the JSON API described below under `/api`. The pages at `/`,
+`/rendering/ssg`, and `/rendering/ssr` are framework demonstrations only and show
+no market data.
+
+### Verifying the API is running
+
+With the backend running:
+
+```bash
+curl http://localhost:3000/api/health
+```
+
+```json
+{
+  "success": true,
+  "data": {
+    "status": "ok",
+    "service": "krishi-mandi-backend",
+    "apiVersion": "v1",
+    "checkedAt": "2026-10-23T08:00:28.763Z",
+    "uptimeSeconds": 16.813,
+    "scope": "api-process-only",
+    "notConnected": ["database", "mandiDataProvider", "aiProvider"]
+  }
+}
+```
+
+`status: "ok"` reports **only that the API process is alive**. The
+`notConnected` list is intentional: no database or data provider is wired up
+yet, so the endpoint never claims they are healthy.
+
+## API conventions
+
+Every `/api` response uses one of two shapes:
+
+```jsonc
+// success
+{ "success": true, "data": { } }
+
+// failure
+{ "success": false, "error": { "code": "VALIDATION_ERROR", "message": "...", "details": [] } }
+```
+
+Clients can branch on `success` alone. Error codes are `VALIDATION_ERROR`,
+`NOT_FOUND`, `METHOD_NOT_ALLOWED`, `FORBIDDEN`, and `INTERNAL_ERROR`. Unexpected
+server faults return a generic 500; stack traces, SQL text, and environment
+values are logged on the server only and are never sent to the client.
+
+### CORS
+
+The frontend and backend run on different ports, so the browser needs the
+backend's permission before any call succeeds. `backend/src/proxy.ts` implements
+that gate for `/api/*` only.
+
+- Allowed origins come from `CORS_ALLOWED_ORIGINS` (comma-separated).
+- The exact origin is echoed back, never `*`, because credentials are allowed.
+- `OPTIONS` preflights are answered with `204` before any route handler runs.
+- An unlisted origin is rejected with `403`, including preflights.
+- Requests with **no** `Origin` header (curl, server-to-server, same-origin) are
+  unaffected and always pass through.
+
+If you run the frontend on a different port, add that origin to
+`backend/.env.local` and restart the backend:
+
+```ini
+CORS_ALLOWED_ORIGINS="http://localhost:5173,http://localhost:4173"
+```
+
+**Important:** under `next start` (production mode) a missing or empty
+`CORS_ALLOWED_ORIGINS` means the allowlist is empty and **every** cross-origin
+request gets `403`. This fails closed deliberately. Only `next dev` falls back to
+`http://localhost:5173` automatically.
 
 ## Commands
 
@@ -100,6 +173,7 @@ Run from the repository root:
 | `npm run build`          | Production build of both apps                   |
 | `npm run lint`           | Lint both apps                                  |
 | `npm run typecheck`      | Type-check both apps                            |
+| `npm run test`           | Run backend API unit tests                     |
 
 Per-app commands are also available with `npm run <script> --workspace frontend`
 or `--workspace backend`. Each app defines `dev`, `build`, `lint`, `typecheck`,
@@ -114,6 +188,10 @@ frontend/                 React + Vite + TypeScript UI
   src/vite-env.d.ts       Typed import.meta.env declarations
 backend/                  Next.js App Router API service
   src/app/layout.tsx      Minimal root layout (no UI)
+  src/app/api/health/     GET /api/health route handler
+  src/app/api/[...path]/  JSON 404 for unknown API paths
+  src/lib/api/            Response envelope, errors, validation, CORS, env
+  src/proxy.ts            CORS gate and preflight handling for /api/*
 package.json              npm workspaces root
 docs/                     (planned)
 PRD.md  AGENTS.md  TRACER.md
@@ -129,6 +207,8 @@ met (`insufficient_data` otherwise).
 
 ## Current status
 
-Phase 1 (monorepo scaffold) is complete. The dashboard, API endpoints, database
-schema, and demo data are built in later phases. See `TRACER.md` for progress and
-`PRD.md` for requirements.
+Phases 1 (scaffold) and 2 (UI foundation) are complete. Phase 3 adds the API
+foundation: `GET /api/health`, the shared JSON envelope, environment-based CORS,
+and request-validation helpers. The database schema, price endpoints, and demo
+data are built in later phases. See `TRACER.md` for progress and `PRD.md` for
+requirements.
