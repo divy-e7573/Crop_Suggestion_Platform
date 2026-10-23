@@ -40,3 +40,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# prisma
+# Generated client is produced by `npx prisma generate` and must not be committed.
+/generated/

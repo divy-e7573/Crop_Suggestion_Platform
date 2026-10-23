@@ -24,6 +24,9 @@ out/
 *.sqlite3
 pgdata/
 
+# Prisma generated client (rebuilt by `npx prisma generate`)
+generated/
+
 # Logs
 logs/
 *.log

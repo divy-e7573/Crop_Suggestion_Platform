@@ -19,6 +19,12 @@
     "lint:backend": "npm run lint --workspace backend",
     "lint": "npm run lint:frontend && npm run lint:backend",
     "test": "npm run test --workspace backend",
+    "db:generate": "npm run db:generate --workspace backend",
+    "db:validate": "npm run db:validate --workspace backend",
+    "db:migrate": "npm run db:migrate --workspace backend",
+    "db:deploy": "npm run db:deploy --workspace backend",
+    "db:seed": "npm run db:seed --workspace backend",
+    "db:verify": "npm run db:verify --workspace backend",
     "typecheck:frontend": "npm run typecheck --workspace frontend",
     "typecheck:backend": "npm run typecheck --workspace backend",
     "typecheck": "npm run typecheck:frontend && npm run typecheck:backend"

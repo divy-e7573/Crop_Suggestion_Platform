@@ -1,0 +1,217 @@
+// Prisma schema for the Krishi Mandi platform.
+//
+// Scope is deliberately Phase 4 only: reference data for crops and markets,
+// price observations, and the crop-suitability rules. Farmer profiles,
+// authentication, live provider access, and forecasting are later phases.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+/// How fresh a record is, and whether it came from a verified provider.
+///
+/// This is stored on every price observation so seeded demo rows can never be
+/// mistaken for live data (PRD FR-03, AGENTS.md section 3). The vocabulary
+/// matches frontend/src/components/ui/StatusBadge.tsx.
+enum DataStatus {
+  /// Fetched from a verified provider during the current request.
+  LIVE
+  /// A real observation recorded earlier; `observedAt` says when.
+  RECENT
+  /// Deterministic seeded demonstration record. Not a real market price.
+  DEMO
+  /// No data could be resolved for this request.
+  UNAVAILABLE
+}
+
+/// Unit a price is quoted in. Currency is always INR; storing the unit
+/// explicitly prevents mixing rupees per quintal with other units (PRD FR-03).
+enum PriceUnit {
+  RUPEES_PER_QUINTAL
+  RUPEES_PER_KILOGRAM
+  RUPEES_PER_TONNE
+}
+
+enum Season {
+  KHARIF
+  RABI
+  ZAID
+  WHOLE_YEAR
+}
+
+enum SoilType {
+  ALLUVIAL
+  BLACK
+  RED
+  LATERITE
+  SANDY
+  OTHER
+}
+
+enum IrrigationType {
+  RAINFED
+  DRIP
+  SPRINKLER
+  FLOOD
+  CANAL
+  WELL
+  OTHER
+}
+
+enum CropCategory {
+  CEREAL
+  PULSE
+  OILSEED
+  VEGETABLE
+  FRUIT
+  CASH
+  SPICE
+  OTHER
+}
+
+/// A mandi (market) where commodities are traded.
+model Market {
+  id String @id @default(cuid())
+
+  /// Name as published by the market or provider.
+  name String @db.VarChar(160)
+
+  /// Lower-cased name, state, and district form the stable lookup key used by
+  /// the demo provider and the seeds.
+  slug String @db.VarChar(180)
+
+  state String @db.VarChar(80)
+  district String @db.VarChar(80)
+
+  /// Optional human-readable locality detail. Never precise GPS.
+  locality String? @db.VarChar(120)
+
+  /// Verified coordinates only. NULL means distance must not be calculated or
+  /// shown (PRD FR-05).
+  latitude Decimal? @db.Decimal(9, 6)
+  longitude Decimal? @db.Decimal(9, 6)
+
+  /// Where this market record came from, for example `demo-seed`.
+  source String @db.VarChar(80)
+  dataStatus DataStatus @default(DEMO)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  observations MandiPriceObservation[]
+
+  @@unique([slug])
+  @@unique([name, state, district])
+  @@index([state])
+  @@index([district, state])
+  @@index([dataStatus])
+}
+
+/// A crop the platform can price or recommend.
+model Crop {
+  id String @id @default(cuid())
+
+  /// Canonical display name, for example `Wheat`.
+  name String @db.VarChar(120)
+
+  /// Stable lower-cased key used by seeds and provider mappings.
+  slug String @db.VarChar(120)
+
+  /// Alternative names used by official sources, for example `Gehun`.
+  aliases String[] @default([])
+
+  category CropCategory @default(OTHER)
+  dataStatus DataStatus @default(DEMO)
+  source String @default("demo-seed") @db.VarChar(80)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  observations MandiPriceObservation[]
+  suitabilityRules CropSuitabilityRule[]
+
+  @@unique([slug])
+  @@index([category])
+}
+
+/// One observed price record for a crop at a market on a specific day.
+model MandiPriceObservation {
+  id String @id @default(cuid())
+
+  cropId String
+  crop Crop @relation(fields: [cropId], references: [id], onDelete: Cascade)
+
+  marketId String
+  market Market @relation(fields: [marketId], references: [id], onDelete: Cascade)
+
+  /// The date the price was observed, not the date it was fetched.
+  observedAt DateTime @db.Date
+
+  /// All amounts are INR, expressed in the unit named by `unit`.
+  minPrice Decimal @db.Decimal(12, 2)
+  maxPrice Decimal @db.Decimal(12, 2)
+  modalPrice Decimal @db.Decimal(12, 2)
+  unit PriceUnit @default(RUPEES_PER_QUINTAL)
+
+  /// Provenance, for example `demo-seed` or a future official provider id.
+  source String @db.VarChar(80)
+  dataStatus DataStatus @default(DEMO)
+
+  /// When the record was retrieved. Null for seeds never fetched from a
+  /// provider.
+  fetchedAt DateTime? @db.Timestamptz(3)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  @@unique([cropId, marketId, observedAt])
+  @@index([marketId, observedAt])
+  @@index([cropId, observedAt])
+  @@index([dataStatus])
+  @@index([observedAt])
+}
+
+/// Rule-based guidance used to rank crops for a farmer profile.
+///
+/// Phase 4 stores and versions these records only. The ranking engine itself
+/// arrives in Phase 8.
+model CropSuitabilityRule {
+  id String @id @default(cuid())
+
+  cropId String
+  crop Crop @relation(fields: [cropId], references: [id], onDelete: Cascade)
+
+  /// Version of the rule set, so Phase 8 can explain which rules produced a
+  /// recommendation.
+  ruleVersion String @db.VarChar(40)
+
+  /// Empty arrays mean "no restriction on this factor".
+  soilTypes SoilType[] @default([])
+  seasons Season[] @default([])
+  irrigationTypes IrrigationType[] @default([])
+
+  /// Geographic applicability by state name. Empty means nationwide.
+  applicableStates String[] @default([])
+
+  minLandAreaAcre Decimal? @db.Decimal(10, 2)
+  maxLandAreaAcre Decimal? @db.Decimal(10, 2)
+
+  /// Plain-language reason shown to the farmer. Never promises a yield.
+  explanation String @db.VarChar(600)
+
+  isActive Boolean @default(true)
+  dataStatus DataStatus @default(DEMO)
+  source String @default("demo-seed") @db.VarChar(80)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  @@unique([cropId, ruleVersion])
+  @@index([cropId, isActive])
+  @@index([ruleVersion])
+}
