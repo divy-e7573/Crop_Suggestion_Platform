@@ -1,0 +1,112 @@
+.shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.header {
+  background-color: var(--color-brand-800);
+  color: var(--color-neutral-0);
+  border-bottom: 4px solid var(--color-accent-600);
+}
+
+.headerInner {
+  max-width: var(--layout-max-width);
+  margin: 0 auto;
+  padding: var(--space-4) var(--layout-gutter) 0;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.brandMark {
+  display: grid;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  flex: none;
+  border-radius: var(--radius-md);
+  background-color: var(--color-accent-600);
+  font-size: var(--font-size-lg);
+}
+
+.brandText {
+  display: flex;
+  flex-direction: column;
+}
+
+.brandName {
+  font-size: var(--font-size-md);
+  font-weight: 700;
+  line-height: var(--line-height-tight);
+}
+
+.brandTagline {
+  font-size: var(--font-size-xs);
+  color: var(--color-brand-100);
+}
+
+/*
+ * The nav wraps instead of hiding behind a JavaScript toggle, so every link is
+ * always present, keyboard reachable, and visible without JavaScript.
+ */
+.nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin: 0 calc(var(--layout-gutter) * -1);
+  padding: 0 var(--layout-gutter);
+}
+
+.navLink {
+  display: block;
+  padding: var(--space-3) var(--space-4);
+  color: var(--color-brand-100);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  text-decoration: none;
+  border-bottom: 3px solid transparent;
+}
+
+.navLink:hover {
+  background-color: var(--color-brand-700);
+  color: var(--color-neutral-0);
+}
+
+.navLinkActive {
+  color: var(--color-neutral-0);
+  border-bottom-color: var(--color-accent-600);
+  background-color: var(--color-brand-700);
+}
+
+.main {
+  flex: 1;
+  width: 100%;
+  max-width: var(--layout-max-width);
+  margin: 0 auto;
+  padding: var(--space-5) var(--layout-gutter) var(--space-7);
+}
+
+.footer {
+  background-color: var(--color-neutral-100);
+  border-top: 1px solid var(--color-neutral-200);
+}
+
+.footerInner {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  max-width: var(--layout-max-width);
+  margin: 0 auto;
+  padding: var(--space-5) var(--layout-gutter);
+}
+
+.footerNote {
+  margin: 0;
+  font-size: var(--font-size-xs);
+  color: var(--color-neutral-600);
+}

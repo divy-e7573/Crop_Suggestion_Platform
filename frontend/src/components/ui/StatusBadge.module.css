@@ -1,0 +1,43 @@
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-pill);
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+/*
+ * The leading dot repeats the status as a shape, so the meaning does not rely
+ * on colour alone (FR-12).
+ */
+.dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: var(--radius-pill);
+  background-color: currentColor;
+  flex: none;
+}
+
+.live {
+  color: var(--color-status-live);
+  background-color: var(--color-status-live-bg);
+}
+
+.recent {
+  color: var(--color-status-recent);
+  background-color: var(--color-status-recent-bg);
+}
+
+.demo {
+  color: var(--color-status-demo);
+  background-color: var(--color-status-demo-bg);
+}
+
+.unavailable {
+  color: var(--color-status-unavailable);
+  background-color: var(--color-status-unavailable-bg);
+}

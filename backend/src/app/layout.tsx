@@ -1,6 +1,8 @@
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 
+import './globals.css';
+
 /**
  * Minimal root layout for an API-only Next.js app.
  *

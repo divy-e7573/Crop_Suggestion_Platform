@@ -1,18 +1,28 @@
-import { API_BASE_URL } from './lib/apiConfig';
+import { Route, Routes } from 'react-router-dom';
 
-function App() {
+import { AppShell } from './components/layout/AppShell';
+import { CropSuggestionsPage } from './pages/CropSuggestionsPage';
+import { DashboardPage } from './pages/DashboardPage';
+import { DataSourcesPage } from './pages/DataSourcesPage';
+import { MandiPricesPage } from './pages/MandiPricesPage';
+import { NotFoundPage } from './pages/NotFoundPage';
+
+/**
+ * Route table for the farmer UI. The shell renders once and each page renders
+ * inside it.
+ */
+export function App() {
   return (
-    <main>
-      <h1>Krishi Mandi Price Prediction &amp; Crop Suggestion Platform</h1>
-      <p>
-        The React frontend is scaffolded and running. The dashboard, farmer profile
-        form, and price views are built in later phases.
-      </p>
-      <p>
-        Backend API base URL: <code>{API_BASE_URL}</code>
-      </p>
-    </main>
+    <AppShell>
+      <Routes>
+        <Route path="/" element={<DashboardPage />} />
+        <Route path="/mandi-prices" element={<MandiPricesPage />} />
+        <Route path="/crop-suggestions" element={<CropSuggestionsPage />} />
+        <Route path="/data-sources" element={<DataSourcesPage />} />
+        <Route path="*" element={<NotFoundPage />} />
+      </Routes>
+    </AppShell>
   );
 }
 
-export default App
+export default App;

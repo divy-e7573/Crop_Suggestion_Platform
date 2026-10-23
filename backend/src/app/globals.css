@@ -1,0 +1,148 @@
+/*
+ * Minimal styling for the Next.js framework-demonstration pages only.
+ * The product UI lives in the separate React app under frontend/.
+ */
+
+:root {
+  --demo-bg: #ffffff;
+  --demo-text: #1a211d;
+  --demo-muted: #55605a;
+  --demo-accent: #185530;
+  --demo-accent-100: #e3f3e8;
+  --demo-border: #d7dcd7;
+  --demo-warn-bg: #fdf1d8;
+  --demo-warn-text: #7a4a00;
+  --demo-warn-border: #9a5b00;
+  --demo-font: 'Segoe UI', system-ui, -apple-system, Roboto, Arial, sans-serif;
+  --demo-mono: 'Cascadia Mono', Consolas, 'Courier New', monospace;
+}
+
+body {
+  margin: 0;
+  background-color: var(--demo-bg);
+  color: var(--demo-text);
+  font-family: var(--demo-font);
+  line-height: 1.6;
+}
+
+.wrap {
+  max-width: 46rem;
+  margin: 0 auto;
+  padding: 2.5rem 1.25rem 4rem;
+}
+
+.eyebrow {
+  display: inline-block;
+  margin: 0 0 0.75rem;
+  padding: 0.15rem 0.6rem;
+  border-radius: 0.25rem;
+  background-color: var(--demo-accent-100);
+  color: var(--demo-accent);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+h1 {
+  margin: 0 0 0.75rem;
+  font-size: 1.875rem;
+  line-height: 1.25;
+}
+
+h2 {
+  margin: 2rem 0 0.5rem;
+  font-size: 1.25rem;
+}
+
+h3 {
+  margin: 0 0 0.5rem;
+  font-size: 1.0625rem;
+}
+
+p {
+  margin: 0 0 1rem;
+}
+
+ul {
+  padding-left: 1.25rem;
+}
+
+li {
+  margin-bottom: 0.35rem;
+}
+
+a {
+  color: var(--demo-accent);
+}
+
+code {
+  padding: 0.1em 0.35em;
+  border-radius: 0.25rem;
+  background-color: var(--demo-accent-100);
+  font-family: var(--demo-mono);
+  font-size: 0.92em;
+}
+
+.panel {
+  margin: 1.25rem 0;
+  padding: 1rem 1.25rem;
+  border: 1px solid var(--demo-border);
+  border-radius: 0.5rem;
+}
+
+.tag {
+  display: inline-block;
+  margin-bottom: 0.5rem;
+  padding: 0.15rem 0.6rem;
+  border-radius: 999px;
+  background-color: var(--demo-accent);
+  color: #ffffff;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.tagRequestTime {
+  background-color: var(--demo-warn-border);
+}
+
+.note {
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--demo-warn-border);
+  border-left-width: 4px;
+  border-radius: 0.5rem;
+  background-color: var(--demo-warn-bg);
+  color: var(--demo-warn-text);
+  font-size: 0.875rem;
+}
+
+.muted {
+  color: var(--demo-muted);
+}
+
+.proof {
+  display: block;
+  margin: 0.75rem 0;
+  padding: 0.75rem 1rem;
+  overflow-x: auto;
+  border-radius: 0.5rem;
+  background-color: var(--demo-accent-100);
+  font-family: var(--demo-mono);
+  font-size: 0.875rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.button {
+  padding: 0.5rem 1rem;
+  border: 2px solid var(--demo-accent);
+  border-radius: 0.5rem;
+  background-color: var(--demo-accent);
+  color: #ffffff;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+:focus-visible {
+  outline: 3px solid var(--demo-accent);
+  outline-offset: 2px;
+}
