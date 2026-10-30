@@ -71,8 +71,10 @@ AI_API_KEY=
 AI_MODEL=
 ```
 
-Only `CORS_ALLOWED_ORIGINS` is needed for Phase 3; the other variables are
-declared ahead of the phases that use them.
+`CORS_ALLOWED_ORIGINS` is required for the browser to reach the API.
+`MANDI_DATA_PROVIDER_MODE` selects the price data source (see
+[Mandi data providers](#mandi-data-providers)). `AI_API_KEY` and `AI_MODEL`
+are declared ahead of the phase that uses them.
 
 ## Database (Prisma + PostgreSQL)
 
@@ -244,6 +246,156 @@ CORS_ALLOWED_ORIGINS="http://localhost:5173,http://localhost:4173"
 request gets `403`. This fails closed deliberately. Only `next dev` falls back to
 `http://localhost:5173` automatically.
 
+## Mandi data providers
+
+The API never talks to a data source directly. It asks a **provider**, and the
+provider normalises the answer into one internal shape: crop, market,
+observation date, min/max/modal price, unit, source, and a data status. The
+mode is chosen by `MANDI_DATA_PROVIDER_MODE`:
+
+| Mode     | Source                                                        | Credentials                     | Records are labelled |
+| -------- | ------------------------------------------------------------- | ------------------------------- | -------------------- |
+| `demo`   | The seeded rows already in PostgreSQL                          | none                            | `DEMO`               |
+| `live`   | `data.gov.in` daily mandi prices (Ministry of Agriculture)      | `MANDI_PROVIDER_API_KEY`         | `LIVE` / `RECENT`    |
+
+- `demo` is the default. It reads the Phase 4 seed data. Nothing is generated
+  at request time, so the same request always returns the same rows and the
+  API never writes to the database.
+- `live` reads the official resource
+  [`9ef84268-d588-465a-a308-a864a43d0070`](https://www.data.gov.in/resource/9ef84268-d588-465a-a308-a864a43d0070)
+  (*Current Daily Price of Various Commodities from Various Markets (Mandi)*,
+  Ministry of Agriculture and Farmers Welfare, published under the Government
+  Open Data Licence - India). Request an API key at
+  [data.gov.in](https://data.gov.in) and put it in `MANDI_PROVIDER_API_KEY`.
+- Any other mode value is rejected with a clear error. It never silently
+  falls back to demo data.
+
+**The live provider never invents data.** If the upstream is unreachable,
+refuses the request, or answers with something unusable, the API returns a
+`503` (or `502`) with a `PROVIDER_*` error code. It does **not** quietly
+return seeded rows in place of real prices.
+
+**Everything is labelled.** Every price observation carries its own
+`dataStatus` (`LIVE`, `RECENT`, `DEMO`, `UNAVAILABLE`) and `source`, and every
+response carries a `dataSource` block naming the provider. Demo records are
+never presented as live, and the price unit is always stated explicitly
+(`INR per quintal`) rather than assumed.
+
+### Verified upstream behaviour
+
+The live provider is built against behaviour that was confirmed with real
+requests, not assumptions:
+
+- The endpoint needs an `api-key`. A request without one is rejected with
+  HTTP `400`, and a request with an unknown key with HTTP `403`.
+- `filters[state]`, `filters[district]`, `filters[market]` and
+  `filters[commodity]` are honoured and match case-insensitively. There is
+  **no** usable date filter, so dates are applied to the fetched page.
+- Every response is capped at **10 records**, whatever `limit` asks for, so the
+  provider pages through the resource itself.
+- The service advertises no request budget in its headers
+  (`X-Ratelimit-Limit: -1`), but under a burst it still answers `429`, and it
+  sometimes drops a connection. The provider therefore retries a failed page a
+  few times, keeps a small page budget, and caches pages for a minute.
+- The resource publishes no coordinates, so the API never reports a distance
+  for a live market.
+
+## API endpoints
+
+| Method | Path                 | Purpose                                                  |
+| ------ | -------------------- | -------------------------------------------------------- |
+| `GET`  | `/api/health`        | Liveness of the API process only                          |
+| `GET`  | `/api/mandi-prices`  | Price observations, with filters and pagination            |
+| `GET`  | `/api/markets`       | Markets and their latest available price                  |
+| `GET`  | `/api/data-sources`  | Which provider is configured, and whether it answered      |
+
+### `GET /api/mandi-prices`
+
+Query parameters (all optional):
+
+| Parameter | Meaning                                                      | Notes                                              |
+| --------- | ------------------------------------------------------------ | -------------------------------------------------- |
+| `crop`    | Crop slug, name, or alias (`wheat`, `Wheat`, `Gehun`)        | Case-insensitive                                    |
+| `market`  | Market slug or name                                          | Case-insensitive                                    |
+| `state`   | State name, for example `Maharashtra`                        | Case-insensitive                                    |
+| `district`| District name                                                | Case-insensitive                                    |
+| `from`    | Start of the observation date range, `yyyy-mm-dd`             | Inclusive                                           |
+| `to`      | End of the observation date range, `yyyy-mm-dd`               | Inclusive                                           |
+| `limit`   | Page size, 1-100                                             | Default `25`                                        |
+| `offset`  | Rows to skip, 0-10000                                        | Default `0`                                         |
+
+```bash
+curl "http://localhost:3000/api/mandi-prices?crop=wheat&state=Maharashtra&limit=5"
+```
+
+```jsonc
+{
+  "success": true,
+  "data": {
+    "observations": [
+      {
+        "crop": { "slug": "wheat", "name": "Wheat", "variety": null, "grade": null },
+        "market": {
+          "slug": "nashik-apmc-maharashtra",
+          "name": "Nashik APMC",
+          "state": "Maharashtra",
+          "district": "Nashik",
+          "locality": "Pimpalgaon"
+        },
+        "observedAt": "2026-01-05",
+        "minPrice": 2000,
+        "maxPrice": 2400,
+        "modalPrice": 2200,
+        "unit": "RUPEES_PER_QUINTAL",
+        "unitLabel": "INR per quintal",
+        "currency": "INR",
+        "source": "demo-seed",
+        "dataStatus": "DEMO",
+        "isLive": false,
+        "fetchedAt": null
+      }
+    ],
+    "pagination": { "limit": 5, "offset": 0, "returned": 1, "total": 42, "truncated": false },
+    "dataSource": {
+      "providerId": "demo-seed",
+      "providerName": "Seeded demonstration data",
+      "mode": "demo",
+      "dataStatus": "DEMO",
+      "isDemoData": true,
+      "isLiveData": false,
+      "label": "Demo data",
+      "notice": "These are seeded demonstration records. They are not real mandi prices.",
+      "source": { "id": "demo-seed", "url": null, "attribution": "..." }
+    }
+  }
+}
+```
+
+### `GET /api/markets`
+
+Query parameters: `market`, `state`, `district`, `limit`, `offset`. Each
+market reports `hasVerifiedCoordinates` and its `latestPrice`. A distance is
+only ever shown when the source published real coordinates; the seeded demo
+markets deliberately have none.
+
+### `GET /api/data-sources`
+
+Reports the configured provider, whether it is serving demo records or a
+verified source, and the source attribution. In `live` mode the endpoint
+performs **one real request** to the upstream and reports whether it
+answered, so the endpoint never claims a source is healthy without checking.
+
+### Provider errors
+
+| Code                     | Status | Meaning                                             |
+| ------------------------ | ------ | --------------------------------------------------- |
+| `PROVIDER_NOT_CONFIGURED`| `503`  | The live provider is selected but has no API key     |
+| `PROVIDER_UNAVAILABLE`   | `503`  | The upstream could not be reached or failed          |
+| `PROVIDER_UNAVAILABLE`   | `502`  | The upstream answered with an unusable payload       |
+| `PROVIDER_RATE_LIMITED`  | `503`  | The upstream refused the request because of a budget |
+
+These responses never contain demo rows, stack traces, or the API key.
+
 ## Commands
 
 Run from the repository root:
@@ -278,9 +430,14 @@ frontend/                 React + Vite + TypeScript UI
 backend/                  Next.js App Router API service
   src/app/layout.tsx      Minimal root layout (no UI)
   src/app/api/health/     GET /api/health route handler
+  src/app/api/markets/    GET /api/markets route handler
+  src/app/api/mandi-prices/ GET /api/mandi-prices route handler
+  src/app/api/data-sources/ GET /api/data-sources route handler
   src/app/api/[...path]/  JSON 404 for unknown API paths
   src/lib/api/            Response envelope, errors, validation, CORS, env
   src/lib/db/             Prisma client, driver adapter, repositories
+  src/lib/providers/      Provider contract, demo provider, data.gov.in provider
+  src/lib/services/       Mandi price service shared by the routes
   src/proxy.ts            CORS gate and preflight handling for /api/*
   prisma/schema.prisma    Database models and enums
   prisma/migrations/      Generated SQL migrations
@@ -295,15 +452,23 @@ PRD.md  AGENTS.md  TRACER.md
 
 ## Data honesty
 
-No live mandi data source is connected yet. When the data layer is built it will ship
-a **deterministic demo provider** behind a provider interface, with every record and
-view clearly labelled `Demo data`. Seeded records are never presented as live or
-real-time, and forecasts are only returned when a documented minimum-data rule is
-met (`insufficient_data` otherwise).
+Two data sources exist behind one provider interface:
+
+- the **demo provider**, which serves the seeded PostgreSQL rows and labels every
+  record `DEMO` / `demo-seed`, and
+- the **data.gov.in provider**, which serves the official daily mandi price
+  resource and labels its records `LIVE` or `RECENT` with the source `data-gov-in`.
+
+Which one is active depends on `MANDI_DATA_PROVIDER_MODE`. Seeded records are
+never presented as live or real-time, the live provider never substitutes demo
+rows when the upstream fails, and forecasts are only returned when a documented
+minimum-data rule is met (`insufficient_data` otherwise).
 
 ## Current status
 
-Phases 1 (scaffold), 2 (UI foundation), and 3 (API foundation) are complete.
-Phase 4 adds the PostgreSQL schema, migrations, and demo seeds. Price endpoints,
-the real data provider, and crop recommendations are built in later phases. See
-`TRACER.md` for progress and `PRD.md` for requirements.
+Phases 1 (scaffold), 2 (UI foundation), 3 (API foundation), and 4 (database) are
+complete. Phase 5 adds the provider abstraction, the demo and data.gov.in
+providers, and the `/api/mandi-prices`, `/api/markets`, and `/api/data-sources`
+endpoints. The React UI is not yet wired to these endpoints, and crop
+recommendations are built in later phases. See `TRACER.md` for progress and
+`PRD.md` for requirements.

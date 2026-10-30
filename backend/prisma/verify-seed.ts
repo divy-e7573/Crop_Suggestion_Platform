@@ -20,8 +20,10 @@ for (const file of ['.env.local', '.env']) {
 const { prisma } = await import('../src/lib/db/client.ts');
 const {
   getPriceHistory,
+  listMarketRecords,
   listCrops,
   listMarkets,
+  listPriceRecords,
   listPriceObservations,
 } = await import('../src/lib/db/repositories.ts');
 
@@ -81,6 +83,58 @@ async function main() {
   check(
     JSON.stringify(a) === JSON.stringify(b),
     'repeat query returns identical rows',
+  );
+
+  console.log('\n--- provider-facing queries (Phase 5) ---');
+  const demo = { source: 'demo-seed', dataStatus: 'DEMO' } as const;
+
+  const records = await listPriceRecords({ ...demo, limit: 10, offset: 0 });
+  check(records.items.length === 10, 'listPriceRecords respects the page size', String(records.items.length));
+  check(records.total === 252, 'listPriceRecords counts every matching row', String(records.total));
+  check(records.items.every((r) => r.dataStatus === 'DEMO'), 'listPriceRecords only returns demo rows');
+  check(records.items.every((r) => r.source === 'demo-seed'), 'listPriceRecords only returns demo-seed rows');
+  check(records.items.every((r) => typeof r.minPrice === 'number'), 'listPriceRecords converts Decimal prices to numbers');
+  check(records.items.every((r) => r.crop.aliases.length > 0), 'listPriceRecords includes the crop aliases');
+
+  const liveScoped = await listPriceRecords({
+    ...demo,
+    source: 'data-gov-in',
+    dataStatus: 'LIVE',
+    limit: 10,
+    offset: 0,
+  });
+  check(liveScoped.items.length === 0, 'live-scoped query never returns demo rows', String(liveScoped.items.length));
+  check(liveScoped.total === 0, 'live-scoped count is zero', String(liveScoped.total));
+
+  const paged = await listPriceRecords({ ...demo, limit: 5, offset: 10 });
+  const firstPage = await listPriceRecords({ ...demo, limit: 5, offset: 0 });
+  check(paged.items.length === 5, 'listPriceRecords honours the offset');
+  check(
+    JSON.stringify(paged.items) !== JSON.stringify(firstPage.items),
+    'listPriceRecords returns a different page for a different offset',
+  );
+
+  const marketRecords = await listMarketRecords({ ...demo, limit: 10, offset: 0 });
+  check(marketRecords.items.length === 6, 'listMarketRecords returns every market', String(marketRecords.items.length));
+  check(marketRecords.total === 6, 'listMarketRecords counts every market', String(marketRecords.total));
+  check(
+    marketRecords.items.every((m) => m.latest !== null),
+    'every market has its latest observation attached',
+  );
+  check(
+    marketRecords.items.every((m) => m.latest?.dataStatus === 'DEMO'),
+    'every attached observation is labelled DEMO',
+  );
+  check(
+    marketRecords.items.every((m) => m.latitude === null && m.longitude === null),
+    'no demo market carries coordinates',
+  );
+
+  const puneMarkets = await listMarketRecords({ ...demo, state: 'Maharashtra', limit: 10, offset: 0 });
+  check(puneMarkets.items.length === 3, 'listMarketRecords filters by state', String(puneMarkets.items.length));
+  check(
+    puneMarkets.items.every((m) => m.state === 'Maharashtra'),
+    'listMarketRecords state filter is correct',
   );
 
   console.log('\nFAILURES: ' + failures);
