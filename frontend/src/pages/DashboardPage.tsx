@@ -1,15 +1,16 @@
 import { Card } from '../components/ui/Card';
 import { LinkButton } from '../components/ui/Button';
-import { StatusBadge } from '../components/ui/StatusBadge';
+import { DataSourceStatus } from '../components/dashboard/DataSourceStatus';
+import { FarmProfileForm } from '../components/farm-profile/FarmProfileForm';
 import { API_BASE_URL } from '../lib/apiConfig';
 import styles from './pages.module.css';
 
 /**
  * Dashboard landing page.
  *
- * In this phase the dashboard explains what the product will do and links to the
- * other sections. Real mandi prices, crop suggestions, and forecasts are added in
- * later phases, so nothing here presents fabricated numbers.
+ * The dashboard is the entry point of the farmer journey (PRD section 6): the
+ * farmer profile form lives here, and the rest of the pages read the results
+ * once the next phases add them.
  */
 export function DashboardPage() {
   return (
@@ -23,25 +24,20 @@ export function DashboardPage() {
         </p>
       </header>
 
-      <div className={styles.metaRow}>
-        <StatusBadge status="demo" />
-        <span className={styles.placeholder}>
-          Live mandi data is not connected yet. Demo records are clearly marked.
-        </span>
-      </div>
+      <DataSourceStatus />
 
       <div className={styles.grid}>
         <Card title="Mandi prices" description="Compare prices across markets">
           <p className={styles.placeholder}>
-            The price provider and dashboard arrive in Phase 5 and Phase 7. The empty
-            state is already in place so it can be reused.
+            The price provider is connected. The price dashboard and filters arrive in
+            Phase 7, so no price is shown here yet.
           </p>
         </Card>
 
         <Card title="Crop suggestions" description="Ranked by season and soil type">
           <p className={styles.placeholder}>
-            The farmer profile form and rule engine arrive in Phase 6 and Phase 8.
-            Suggestions always include the reasons behind them.
+            Your profile is validated and saved. The rule engine that ranks crops
+            arrives in Phase 8, and every suggestion will include its reasons.
           </p>
         </Card>
 
@@ -54,17 +50,21 @@ export function DashboardPage() {
       </div>
 
       <Card
-        title="Start here"
-        description="The farmer profile form is the entry point once the backend is connected."
+        title="Your farm profile"
+        description="Tell us about your farm so the app can match markets and crops to it."
         aside={<span className={styles.phaseTag}>Phase 6</span>}
       >
         <p className={styles.placeholder}>
-          The form is intentionally not active yet. It will be enabled only when the
-          backend can validate and store the analysis request.
+          Only the details the app needs are collected: no name, no phone number, and
+          no precise location. Your profile is checked in the browser and again on the
+          server before it is stored.
         </p>
-        <LinkButton to="/data-sources" variant="secondary" size="sm">
-          Read how this app labels its data
-        </LinkButton>
+        <FarmProfileForm />
+        <p className={styles.placeholder}>
+          <LinkButton to="/data-sources" variant="secondary" size="sm">
+            Read how this app labels its data
+          </LinkButton>
+        </p>
       </Card>
 
       <Card title="Application status" description="Current build of the platform">
@@ -73,7 +73,7 @@ export function DashboardPage() {
           <dd className={styles.definitionValue}>React + Vite running on port 5173</dd>
           <dt className={styles.definitionTerm}>Backend API</dt>
           <dd className={styles.definitionValue}>
-            Next.js configured at {API_BASE_URL} (API routes arrive in Phase 3)
+            Next.js configured at {API_BASE_URL}
           </dd>
           <dt className={styles.definitionTerm}>Database</dt>
           <dd className={styles.definitionValue}>

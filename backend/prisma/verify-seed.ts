@@ -19,6 +19,8 @@ for (const file of ['.env.local', '.env']) {
 // the Prisma client before the environment file above is loaded.
 const { prisma } = await import('../src/lib/db/client.ts');
 const {
+  countFarmProfiles,
+  findLatestFarmProfile,
   getPriceHistory,
   listMarketRecords,
   listCrops,
@@ -135,6 +137,69 @@ async function main() {
   check(
     puneMarkets.items.every((m) => m.state === 'Maharashtra'),
     'listMarketRecords state filter is correct',
+  );
+
+  console.log('\n--- farmer profiles (Phase 6) ---');
+  const profileCount = await countFarmProfiles();
+  const profileRows = await prisma.farmProfile.findMany({ orderBy: { createdAt: 'asc' } });
+  check(
+    profileCount === profileRows.length,
+    'countFarmProfiles matches the table',
+    String(profileCount),
+  );
+
+  check(
+    profileRows.every(
+      (p) =>
+        p.state.trim() !== '' &&
+        p.district.trim() !== '' &&
+        Number(p.landArea) > 0 &&
+        (p.landAreaUnit === 'ACRE' || p.landAreaUnit === 'HECTARE'),
+    ),
+    'every stored profile has a location and a positive land area with a unit',
+  );
+
+  check(
+    profileRows.every(
+      (p) =>
+        p.dataStatus === 'LIVE' ||
+        p.dataStatus === 'RECENT' ||
+        p.dataStatus === 'DEMO' ||
+        p.dataStatus === 'UNAVAILABLE',
+    ),
+    'every stored profile carries a known data status',
+  );
+
+  check(
+    profileRows.every((p) => p.dataSourceId.trim() !== ''),
+    'every stored profile records which data source answered',
+  );
+
+  check(
+    profileRows.every((p) => p.matchingObservations >= 0 && p.matchingMarkets >= 0),
+    'matching counts are never negative',
+  );
+
+  // The privacy promise is checked against the real table, not against a
+  // comment: the profile table must not grow a column for a name, a phone
+  // number, or a precise coordinate (PRD section 13).
+  const columns = await prisma.$queryRaw<{ column_name: string }[]>`
+    SELECT column_name FROM information_schema.columns WHERE table_name = 'FarmProfile'
+  `;
+  const columnNames = columns.map((row) => row.column_name.toLowerCase());
+  const forbidden = ['name', 'fullname', 'phone', 'mobile', 'email', 'latitude', 'longitude'];
+  check(
+    forbidden.every((column) => !columnNames.includes(column)),
+    'the profile table stores no name, contact or coordinate column',
+    columnNames.join(','),
+  );
+
+  const latest = await findLatestFarmProfile();
+  const newest = profileRows[profileRows.length - 1];
+  check(
+    latest === null || latest.id === newest?.id,
+    'findLatestFarmProfile returns the newest profile',
+    String(latest?.id),
   );
 
   console.log('\nFAILURES: ' + failures);

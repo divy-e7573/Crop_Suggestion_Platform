@@ -11,6 +11,14 @@
 import { prisma } from './client.ts';
 
 import type {
+  DataStatus,
+  IrrigationType,
+  LandAreaUnit,
+  Season,
+  SoilType,
+} from '../../../generated/prisma/client.ts';
+
+import type {
   DataStatusValue,
   ProviderQuery,
   StoredMarketRow,
@@ -394,4 +402,73 @@ export async function listMarketRecords(query: StoredMarketQuery): Promise<{
   }));
 
   return { items, total };
+}
+
+/* -------------------------------------------------------------------------
+ * Farmer profiles (Phase 6)
+ *
+ * The profile is a reusable search record. It stores only the facts the
+ * product needs, and never a name, a phone number, or a precise location
+ * (PRD FR-10, PRD section 13).
+ * ---------------------------------------------------------------------- */
+
+export type FarmProfileRecord = {
+  state: string;
+  district: string;
+  soilType: SoilType;
+  season: Season;
+  landArea: number;
+  landAreaUnit: LandAreaUnit;
+  villageOrPin?: string | null;
+  irrigationType?: IrrigationType | null;
+  currentCrop?: string | null;
+  dataSourceId: string;
+  dataStatus: DataStatus;
+  matchingObservations: number;
+  matchingMarkets: number;
+  matchingIsComplete: boolean;
+};
+
+/** Stores one validated farmer profile. */
+export async function createFarmProfile(record: FarmProfileRecord) {
+  return prisma.farmProfile.create({
+    data: {
+      state: record.state,
+      district: record.district,
+      soilType: record.soilType,
+      season: record.season,
+      landArea: record.landArea.toFixed(2),
+      landAreaUnit: record.landAreaUnit,
+      villageOrPin: record.villageOrPin ?? null,
+      irrigationType: record.irrigationType ?? null,
+      currentCrop: record.currentCrop ?? null,
+      dataSourceId: record.dataSourceId,
+      dataStatus: record.dataStatus,
+      matchingObservations: record.matchingObservations,
+      matchingMarkets: record.matchingMarkets,
+      matchingIsComplete: record.matchingIsComplete,
+    },
+  });
+}
+
+/** Counts the stored profiles, used by the verification script. */
+export async function countFarmProfiles(): Promise<number> {
+  return prisma.farmProfile.count();
+}
+
+/** Reads the most recently stored profile, used by the verification script. */
+export async function findLatestFarmProfile() {
+  return prisma.farmProfile.findFirst({ orderBy: { createdAt: 'desc' } });
+}
+
+/**
+ * Removes profiles older than the retention window.
+ *
+ * This is the mechanism behind the documented retention rule. It is never
+ * called automatically: the script that calls it needs an explicit flag, so
+ * no profile is ever deleted by accident.
+ */
+export async function deleteFarmProfilesOlderThan(cutoff: Date): Promise<number> {
+  const result = await prisma.farmProfile.deleteMany({ where: { createdAt: { lt: cutoff } } });
+  return result.count;
 }

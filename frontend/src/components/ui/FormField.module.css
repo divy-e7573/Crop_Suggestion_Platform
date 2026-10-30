@@ -4,7 +4,23 @@
   gap: var(--space-1);
 }
 
+/*
+ * A fieldset carries browser-default border, padding, and a min-content
+ * width. They are reset here so the radio group looks like the other fields
+ * and never forces a grid column wider than the screen.
+ */
+.fieldset {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
 .label {
+  padding: 0;
   font-size: var(--font-size-sm);
   font-weight: 600;
   color: var(--color-neutral-900);
@@ -34,6 +50,38 @@
 .hint {
   font-size: var(--font-size-xs);
   color: var(--color-neutral-600);
+}
+
+.radioGroup {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-5);
+  padding: var(--space-3);
+  border: 1px solid var(--color-neutral-400);
+  border-radius: var(--radius-md);
+  background-color: var(--color-neutral-0);
+}
+
+.radioOption {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--font-size-sm);
+}
+
+.radioOption input {
+  width: 1.05rem;
+  height: 1.05rem;
+  margin: 0;
+  accent-color: var(--color-brand-700);
+}
+
+.radioOption label {
+  cursor: pointer;
+}
+
+.radioGroupInvalid {
+  border-color: var(--color-danger-700);
 }
 
 .error {

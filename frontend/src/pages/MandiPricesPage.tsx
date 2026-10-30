@@ -1,13 +1,14 @@
 import { Card } from '../components/ui/Card';
 import { StateMessage } from '../components/ui/StateMessage';
-import { StatusBadge } from '../components/ui/StatusBadge';
+import { DataSourceStatus } from '../components/dashboard/DataSourceStatus';
 import styles from './pages.module.css';
 
 /**
  * Mandi price section.
  *
- * No price provider is connected in this phase, so the page deliberately shows
- * the empty state instead of invented prices (PRD section 12, FR-03).
+ * The price provider is connected, but this page does not read the API yet
+ * (Phase 7). Until it does, the page deliberately shows the empty state
+ * instead of invented prices (PRD section 12, FR-03).
  */
 export function MandiPricesPage() {
   return (
@@ -21,25 +22,20 @@ export function MandiPricesPage() {
         </p>
       </header>
 
-      <div className={styles.metaRow}>
-        <StatusBadge status="unavailable" />
-        <span className={styles.placeholder}>
-          No provider is configured, so no price records exist yet.
-        </span>
-      </div>
+      <DataSourceStatus />
 
       <Card title="Price observations" description="Recent mandi records for your area">
         <StateMessage
           kind="empty"
           title="No price records available"
-          detail="A deterministic demo data provider is built in Phase 5 and the price dashboard is connected in Phase 7. Until then this section stays empty rather than showing made-up numbers."
+          detail="The price provider and its endpoints are built in Phase 5, and this page is connected to them in Phase 7. Until then this section stays empty rather than showing made-up numbers."
         />
       </Card>
 
       <Card
         title="What this section will show"
         description="Planned capabilities, not yet implemented"
-        aside={<span className={styles.phaseTag}>Phase 5 - 7</span>}
+        aside={<span className={styles.phaseTag}>Phase 7</span>}
       >
         <ul className={styles.list}>
           <li>Crop, state or district, market, and date filters.</li>

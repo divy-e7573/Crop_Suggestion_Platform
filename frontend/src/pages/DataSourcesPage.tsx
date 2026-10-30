@@ -4,6 +4,7 @@ import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { StateMessage } from '../components/ui/StateMessage';
 import { StatusBadge } from '../components/ui/StatusBadge';
+import { DataSourceStatus } from '../components/dashboard/DataSourceStatus';
 import { API_BASE_URL } from '../lib/apiConfig';
 import styles from './pages.module.css';
 
@@ -27,9 +28,11 @@ export function DataSourcesPage() {
         </p>
       </header>
 
+      <DataSourceStatus />
+
       <Card
         title="Data status labels"
-        description="Every price record carries one of these labels. Seeded data is never shown as live."
+        description="These are the four labels the app uses. Seeded data is never shown as live."
       >
         <dl className={styles.definition}>
           {STATUS_NOTES.map((note) => (

@@ -69,12 +69,15 @@ MANDI_DATA_PROVIDER_MODE=demo
 MANDI_PROVIDER_API_KEY=
 AI_API_KEY=
 AI_MODEL=
+FARM_PROFILE_RETENTION_DAYS=90
 ```
 
 `CORS_ALLOWED_ORIGINS` is required for the browser to reach the API.
 `MANDI_DATA_PROVIDER_MODE` selects the price data source (see
 [Mandi data providers](#mandi-data-providers)). `AI_API_KEY` and `AI_MODEL`
 are declared ahead of the phase that uses them.
+`FARM_PROFILE_RETENTION_DAYS` sets how long a saved farmer profile is kept
+(see [Privacy and retention](#privacy-and-retention)).
 
 ## Database (Prisma + PostgreSQL)
 
@@ -154,9 +157,9 @@ npm run db:studio     # opens Prisma Studio in your browser
 | `Crop`                    | Canonical crop name, slug, aliases, category                   |
 | `MandiPriceObservation`   | One crop/market/day price range, unit, source, and data status  |
 | `CropSuitabilityRule`     | Versioned soil/season/irrigation guidance for crop suggestions  |
+| `FarmProfile`             | A saved farmer profile: location, soil, season, land area       |
 
-Farmer profiles, authentication, live provider data, and forecasts are later
-phases and have no tables yet.
+Authentication and forecasts are later phases and have no tables yet.
 
 Only variables prefixed with `VITE_` are exposed to the browser bundle. Never put a
 database URL or a secret in the frontend environment file.
@@ -308,6 +311,7 @@ requests, not assumptions:
 | `GET`  | `/api/mandi-prices`  | Price observations, with filters and pagination            |
 | `GET`  | `/api/markets`       | Markets and their latest available price                  |
 | `GET`  | `/api/data-sources`  | Which provider is configured, and whether it answered      |
+| `POST` | `/api/farm-profile/analyze` | Validate and store a farmer profile              |
 
 ### `GET /api/mandi-prices`
 
@@ -396,6 +400,116 @@ answered, so the endpoint never claims a source is healthy without checking.
 
 These responses never contain demo rows, stack traces, or the API key.
 
+### `POST /api/farm-profile/analyze`
+
+Validates a farmer profile, stores it, and reports what the active data source
+could resolve for that location. It is the endpoint behind the profile form on
+the dashboard.
+
+Request body:
+
+| Field            | Required | Meaning                                                        |
+| ---------------- | -------- | -------------------------------------------------------------- |
+| `state`         | yes      | State name, for example `Maharashtra`                           |
+| `district`      | yes      | District name, for example `Nashik`                            |
+| `soilType`      | yes      | `ALLUVIAL`, `BLACK`, `RED`, `LATERITE`, `SANDY`, `OTHER`    |
+| `season`        | yes      | `KHARIF`, `RABI`, `ZAID`, `WHOLE_YEAR`, `OTHER`             |
+| `landArea`      | yes      | Positive number, at most 1000 acres worth of land               |
+| `landAreaUnit`  | yes      | `ACRE` or `HECTARE`                                           |
+| `villageOrPin`  | no       | Village name, or a PIN code with exactly 6 digits                |
+| `irrigationType`| no       | `RAINFED`, `DRIP`, `SPRINKLER`, `FLOOD`, `CANAL`, `WELL`, `OTHER` |
+| `currentCrop`   | no       | Current or intended crop                                        |
+
+```bash
+curl -X POST http://localhost:3000/api/farm-profile/analyze \
+  -H "Content-Type: application/json" \
+  -d '{"state":"Maharashtra","district":"Nashik","soilType":"BLACK","season":"KHARIF","landArea":2.5,"landAreaUnit":"ACRE"}'
+```
+
+```jsonc
+{
+  "success": true,
+  "data": {
+    "profileId": "cmvuzkodr0002ysvbaob092cy",
+    "savedAt": "2026-10-30T08:06:39.087Z",
+    "profile": {
+      "id": "cmvuzkodr0002ysvbaob092cy",
+      "state": "Maharashtra",
+      "district": "Nashik",
+      "soilType": "BLACK",
+      "season": "KHARIF",
+      "landArea": 2.5,
+      "landAreaUnit": "ACRE",
+      "landAreaInAcres": 2.5,
+      "villageOrPin": "Pimpalgaon",
+      "irrigationType": "DRIP",
+      "currentCrop": "Soybean",
+      "createdAt": "2026-10-30T08:06:39.087Z"
+    },
+    "matchingData": {
+      "priceObservations": 84,
+      "markets": 2,
+      "isComplete": true,
+      "dataStatus": "DEMO",
+      "source": "demo-seed",
+      "notice": "These are seeded demonstration records. They are not real mandi prices."
+    },
+    "analysis": {
+      "status": "not_computed",
+      "cropSuggestions": null,
+      "sellingInsights": null,
+      "message": "Your profile was validated and saved. Crop suggestions and selling-period insights are added in a later phase, so no ranking is shown yet."
+    },
+    "notice": "Your details were checked and stored so the app can find matching markets. Nothing here is a promise about yield, price, or profit."
+  }
+}
+```
+
+**What this endpoint does not do.** It does not rank crops and it does not
+produce a forecast. Those belong to the Phase 8 rule engine, so the response
+says `"status": "not_computed"` instead of returning an empty list that would
+look like "no crop suits this farm".
+
+**A failed data source does not lose the profile.** If the provider cannot be
+read, the profile is still stored and the response reports
+`dataStatus: "UNAVAILABLE"` with the provider's message. It never falls back
+to demo rows.
+
+Invalid input returns `400` with `VALIDATION_ERROR` and a `details` array
+that names the field, so the form can show the message next to the input that
+caused it:
+
+```jsonc
+{
+  "success": false,
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "The body is invalid. Check the highlighted fields and try again.",
+    "details": [{ "field": "landArea", "message": "Enter a land area greater than zero.", "code": "custom" }]
+  }
+}
+```
+
+## Privacy and retention
+
+The profile form collects only what the product needs:
+
+- **No name, no phone number, no email, no GPS.** The database check in
+  `npm run db:verify` confirms the `FarmProfile` table has no column for a
+  name, a contact detail, or a coordinate.
+- **District-level location.** The optional village or PIN field is stored
+  because the PRD asks for it, but it is never used to calculate a distance,
+  because no verified coordinates exist for it.
+- **Retention: 90 days by default.** A profile is a reusable search record, so
+  it is kept for `FARM_PROFILE_RETENTION_DAYS` days and then removed:
+
+  ```bash
+  npm run db:prune-profiles                # dry run: lists what would go
+  npm run db:prune-profiles -- --confirm   # actually removes them
+  ```
+
+  The script never deletes anything without `--confirm`.
+
 ## Commands
 
 Run from the repository root:
@@ -415,6 +529,7 @@ Run from the repository root:
 | `npm run db:deploy`      | Apply migrations without prompting             |
 | `npm run db:seed`        | Load deterministic demo data                   |
 | `npm run db:verify`      | Query the database and check demo labelling    |
+| `npm run db:prune-profiles` | Remove profiles older than the retention window |
 
 Per-app commands are also available with `npm run <script> --workspace frontend`
 or `--workspace backend`. Each app defines `dev`, `build`, `lint`, `typecheck`,
@@ -426,6 +541,11 @@ and (backend) `start`.
 frontend/                 React + Vite + TypeScript UI
   src/App.tsx             Root component
   src/lib/apiConfig.ts    Reads VITE_API_BASE_URL for API calls
+  src/lib/apiClient.ts    JSON envelope client used by the app
+  src/lib/farmProfileValidation.ts  Shared form rules (no React, no imports)
+  src/lib/farmProfileApi.ts Client for POST /api/farm-profile/analyze
+  src/components/farm-profile/  The farmer profile form
+  src/components/dashboard/ The live data-status strip
   src/vite-env.d.ts       Typed import.meta.env declarations
 backend/                  Next.js App Router API service
   src/app/layout.tsx      Minimal root layout (no UI)
@@ -433,17 +553,19 @@ backend/                  Next.js App Router API service
   src/app/api/markets/    GET /api/markets route handler
   src/app/api/mandi-prices/ GET /api/mandi-prices route handler
   src/app/api/data-sources/ GET /api/data-sources route handler
+  src/app/api/farm-profile/analyze/ POST /api/farm-profile/analyze route handler
   src/app/api/[...path]/  JSON 404 for unknown API paths
   src/lib/api/            Response envelope, errors, validation, CORS, env
   src/lib/db/             Prisma client, driver adapter, repositories
   src/lib/providers/      Provider contract, demo provider, data.gov.in provider
-  src/lib/services/       Mandi price service shared by the routes
+  src/lib/services/       Mandi price service and the farmer profile service
   src/proxy.ts            CORS gate and preflight handling for /api/*
   prisma/schema.prisma    Database models and enums
   prisma/migrations/      Generated SQL migrations
   prisma/seed-data.ts     Pure, deterministic demo data
   prisma/seed.ts          Idempotent upsert seed script
   prisma/verify-seed.ts   Live-database verification (npm run db:verify)
+  prisma/prune-profiles.ts Retention script (npm run db:prune-profiles)
   generated/prisma/       Generated client (git-ignored)
 package.json              npm workspaces root
 docs/                     (planned)
@@ -466,9 +588,12 @@ minimum-data rule is met (`insufficient_data` otherwise).
 
 ## Current status
 
-Phases 1 (scaffold), 2 (UI foundation), 3 (API foundation), and 4 (database) are
-complete. Phase 5 adds the provider abstraction, the demo and data.gov.in
-providers, and the `/api/mandi-prices`, `/api/markets`, and `/api/data-sources`
-endpoints. The React UI is not yet wired to these endpoints, and crop
-recommendations are built in later phases. See `TRACER.md` for progress and
-`PRD.md` for requirements.
+Phases 1 (scaffold), 2 (UI foundation), 3 (API foundation), 4 (database), and 5
+(mandi provider and prices API) are complete. Phase 6 adds the farmer profile
+form on the dashboard, the `POST /api/farm-profile/analyze` endpoint, and the
+`FarmProfile` table.
+
+The price dashboard, the crop-suitability rules, and the selling-period
+insights are later phases and are not built yet, so the UI never shows a price,
+a forecast, or a crop ranking it cannot back with real data. See `TRACER.md`
+for progress and `PRD.md` for requirements.

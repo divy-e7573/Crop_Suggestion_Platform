@@ -33,14 +33,6 @@
   font-size: var(--font-size-md);
 }
 
-.metaRow {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-3);
-  margin-bottom: var(--space-4);
-}
-
 .list {
   display: flex;
   flex-direction: column;

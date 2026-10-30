@@ -42,6 +42,8 @@ enum Season {
   RABI
   ZAID
   WHOLE_YEAR
+  /// The PRD requires an `Other` option in the season list (FR-02).
+  OTHER
 }
 
 enum SoilType {
@@ -72,6 +74,15 @@ enum CropCategory {
   CASH
   SPICE
   OTHER
+}
+
+/// The unit a farmer's land area is given in.
+///
+/// Only acre and hectare are supported, as scoped by PRD FR-02. The value is
+/// stored next to the area so a number is never read without its unit.
+enum LandAreaUnit {
+  ACRE
+  HECTARE
 }
 
 /// A mandi (market) where commodities are traded.
@@ -214,4 +225,66 @@ model CropSuitabilityRule {
   @@unique([cropId, ruleVersion])
   @@index([cropId, isActive])
   @@index([ruleVersion])
+}
+
+/// A farmer's farm profile, as submitted through the profile form.
+///
+/// Privacy (PRD FR-10, PRD section 13, AGENTS.md section 5):
+///
+/// - The profile stores only the facts the product needs to match a farmer to
+///   markets and to rank crops. No name, phone number, email, or GPS
+///   coordinate is collected or stored.
+/// - The location is district level. The optional village or PIN field is
+///   kept because PRD FR-02 asks for it, but it is never used to compute a
+///   distance, because no verified coordinates exist for it.
+/// - Retention: a profile is a reusable search record, so it is kept for
+///   `FARM_PROFILE_RETENTION_DAYS` days (default 90) and then removed by
+///   `npm run db:prune-profiles`. See the README section on privacy.
+model FarmProfile {
+  id String @id @default(cuid())
+
+  /// State and district as typed by the farmer. Matching against the market
+  /// data is case-insensitive, so the stored spelling is not normalised.
+  state String @db.VarChar(80)
+  district String @db.VarChar(80)
+
+  soilType SoilType
+  season Season
+
+  /// The farmer's land area, always read together with `landAreaUnit`.
+  landArea Decimal @db.Decimal(10, 2)
+  landAreaUnit LandAreaUnit
+
+  /// Optional village name or PIN code. Never used to calculate a distance.
+  villageOrPin String? @db.VarChar(80)
+
+  /// Optional irrigation availability or type.
+  irrigationType IrrigationType?
+
+  /// Optional current or intended crop, kept as typed so a crop that is not
+  /// in the reference table can still be recorded and matched later.
+  currentCrop String? @db.VarChar(120)
+
+  /// Which provider answered when this profile was submitted, for example
+  /// `demo-seed` or `data-gov-in`. Never a credential.
+  dataSourceId String @db.VarChar(80)
+
+  /// The freshness of the data used for the matching summary.
+  dataStatus DataStatus @default(DEMO)
+
+  /// How many price observations matched this profile's location.
+  matchingObservations Int @default(0)
+
+  /// How many distinct markets matched this profile's location.
+  matchingMarkets Int @default(0)
+
+  /// True when the counts above cover the whole source, rather than only the
+  /// part the provider was able to read.
+  matchingIsComplete Boolean @default(true)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([state])
+  @@index([district, state])
+  @@index([createdAt])
 }

@@ -82,6 +82,8 @@ export type TextFieldProps = Omit<FormFieldProps, 'children'> & {
   onChange: (value: string) => void;
   placeholder?: string;
   inputMode?: 'text' | 'numeric' | 'decimal';
+  /** The id of a `datalist` offering suggestions for this field. */
+  list?: string;
 };
 
 export function TextField({
@@ -89,6 +91,7 @@ export function TextField({
   onChange,
   placeholder,
   inputMode,
+  list,
   ...field
 }: TextFieldProps) {
   return (
@@ -101,6 +104,7 @@ export function TextField({
           value={value}
           placeholder={placeholder}
           inputMode={inputMode}
+          list={list}
           onChange={(event) => onChange(event.target.value)}
         />
       )}
@@ -110,9 +114,92 @@ export function TextField({
 
 export type SelectOption = { value: string; label: string };
 
+export type RadioOption = { value: string; label: string };
+
+export type RadioGroupProps = Omit<FormFieldProps, 'children'> & {
+  value: string;
+  options: readonly RadioOption[];
+  onChange: (value: string) => void;
+};
+
+/**
+ * A small group of radio buttons, for a choice between a few options.
+ *
+ * It uses a fieldset and a legend so the group is announced as one question
+ * rather than as a set of unrelated inputs.
+ */
+export function RadioGroup({
+  label,
+  required = false,
+  hint,
+  error,
+  value,
+  options,
+  onChange,
+}: RadioGroupProps) {
+  const id = useId();
+  const hintId = `${id}-hint`;
+  const errorId = `${id}-error`;
+
+  const describedBy = [hint ? hintId : null, error ? errorId : null]
+    .filter(Boolean)
+    .join(' ');
+
+  return (
+    <fieldset
+      className={styles.fieldset}
+      aria-describedby={describedBy ? describedBy : undefined}
+      aria-invalid={error ? true : undefined}
+    >
+      <legend className={styles.label}>
+        {label}
+        {required ? (
+          <span className={styles.required} aria-hidden="true">
+            {' '}
+            *
+          </span>
+        ) : null}
+        {required ? <span className="visually-hidden"> (required)</span> : null}
+      </legend>
+
+      <div className={error ? `${styles.radioGroup} ${styles.radioGroupInvalid}` : styles.radioGroup}>
+        {options.map((option) => {
+          const optionId = `${id}-${option.value}`;
+          return (
+            <div className={styles.radioOption} key={option.value}>
+              <input
+                type="radio"
+                id={optionId}
+                name={id}
+                value={option.value}
+                checked={value === option.value}
+                aria-describedby={describedBy ? describedBy : undefined}
+                aria-invalid={error ? true : undefined}
+                onChange={() => onChange(option.value)}
+              />
+              <label htmlFor={optionId}>{option.label}</label>
+            </div>
+          );
+        })}
+      </div>
+
+      {hint ? (
+        <span className={styles.hint} id={hintId}>
+          {hint}
+        </span>
+      ) : null}
+      {error ? (
+        <span className={styles.error} id={errorId}>
+          {error}
+        </span>
+      ) : null}
+    </fieldset>
+  );
+}
+
 export type SelectFieldProps = Omit<FormFieldProps, 'children'> & {
   value: string;
-  options: SelectOption[];
+  options: readonly SelectOption[];
   onChange: (value: string) => void;
   placeholder?: string;
 };
