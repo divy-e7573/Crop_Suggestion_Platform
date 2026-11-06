@@ -102,7 +102,14 @@ export async function listMarkets(filter: { state?: string; district?: string; t
 /** Crops with their alias list, used to populate filter options later. */
 export async function listCrops(filter: { take: number }) {
   return prisma.crop.findMany({
-    select: { slug: true, name: true, aliases: true, category: true, dataStatus: true },
+    select: {
+      slug: true,
+      name: true,
+      aliases: true,
+      category: true,
+      dataStatus: true,
+      source: true,
+    },
     orderBy: { name: 'asc' },
     take: filter.take,
   });

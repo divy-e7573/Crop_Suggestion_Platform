@@ -1,0 +1,38 @@
+.header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.provider {
+  font-weight: 600;
+}
+
+.notice {
+  margin: 0 0 var(--space-3);
+  color: var(--color-neutral-700);
+  font-size: var(--font-size-sm);
+}
+
+.definition {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-1) var(--space-4);
+  margin: 0;
+}
+
+@media (min-width: 40rem) {
+  .definition {
+    grid-template-columns: 10rem minmax(0, 1fr);
+  }
+
+  .definition dt {
+    font-weight: 600;
+  }
+
+  .definition dd {
+    margin: 0 0 var(--space-2);
+  }
+}

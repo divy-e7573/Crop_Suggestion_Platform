@@ -80,8 +80,36 @@ export const marketQuerySchema = z.object({
   offset: boundedIntQuery({ defaultValue: 0, min: 0, max: MAX_OFFSET }),
 });
 
+/**
+ * Query parameters accepted by `GET /api/mandi-prices/history`.
+ *
+ * Both `crop` and `market` are required. A price series only means
+ * something for one commodity at one market, so the endpoint refuses to
+ * answer a request that could mix two of them (PRD FR-04).
+ */
+export const priceHistoryQuerySchema = z
+  .object({
+    crop: z
+      .string()
+      .trim()
+      .min(1, 'Choose the crop for the price series.')
+      .max(160),
+    market: z
+      .string()
+      .trim()
+      .min(1, 'Choose the market for the price series.')
+      .max(160),
+    from: isoDateQuery,
+    to: isoDateQuery,
+  })
+  .refine((value) => !value.from || !value.to || value.from.getTime() <= value.to.getTime(), {
+    message: 'The from date must not be after the to date.',
+    path: ['from'],
+  });
+
 export type PriceQuery = z.infer<typeof priceQuerySchema>;
 export type MarketQuery = z.infer<typeof marketQuerySchema>;
+export type PriceHistoryQuery = z.infer<typeof priceHistoryQuerySchema>;
 
 /** One price observation as the API returns it. */
 export type PriceObservationDto = {
@@ -153,6 +181,33 @@ export type PriceListDto = {
 export type MarketListDto = {
   markets: MarketDto[];
   pagination: PaginationDto;
+  dataSource: DataSourceDto;
+};
+
+/** One point of a price series. */
+export type PriceHistoryPointDto = {
+  observedAt: string;
+  minPrice: number;
+  maxPrice: number;
+  modalPrice: number;
+  dataStatus: DataStatusValue;
+  source: string;
+};
+
+export type PriceHistoryDto = {
+  series: {
+    crop: { slug: string; name: string };
+    market: { slug: string; name: string; state: string; district: string };
+    /** The price field the series charts. The unit is always stated with it. */
+    metric: 'MODAL_PRICE';
+    unit: PriceUnitValue;
+    unitLabel: string;
+    currency: 'INR';
+    /** Oldest first. Every point is the same crop at the same market. */
+    points: PriceHistoryPointDto[];
+    /** False when the source had more records than the series could read. */
+    isComplete: boolean;
+  };
   dataSource: DataSourceDto;
 };
 
@@ -337,6 +392,74 @@ export async function listMandiMarkets(
       returned: markets.length,
       total: result.total,
       truncated: result.truncated,
+    },
+    dataSource: buildDataSource(provider, status),
+  };
+}
+
+/**
+ * Reads the price series for one crop at one market.
+ *
+ * The series is the data a trend chart draws. It is deliberately narrow:
+ * one commodity, one market, one unit. If the provider happens to return
+ * anything else, those rows are dropped rather than drawn as if they
+ * belonged to the same line (PRD FR-04).
+ */
+export async function getPriceHistorySeries(
+  provider: MandiPriceProvider,
+  query: PriceHistoryQuery,
+): Promise<PriceHistoryDto> {
+  // One crop at one market: the shape a chart can draw without mixing series.
+  const result = await callProvider(() =>
+    provider.listObservations({
+      crop: query.crop,
+      market: query.market,
+      from: query.from,
+      to: query.to,
+      limit: MAX_PAGE_SIZE,
+      offset: 0,
+    }),
+  );
+
+  const first = result.items[0];
+  const cropSlug = first?.cropSlug ?? null;
+  const marketSlug = first?.marketSlug ?? null;
+  const unit = first?.unit ?? 'RUPEES_PER_QUINTAL';
+
+  const points = result.items
+    .filter(
+      (observation) =>
+        observation.cropSlug === cropSlug &&
+        observation.marketSlug === marketSlug &&
+        observation.unit === unit,
+    )
+    .map((observation) => ({
+      observedAt: formatDate(observation.observedAt),
+      minPrice: observation.minPrice,
+      maxPrice: observation.maxPrice,
+      modalPrice: observation.modalPrice,
+      dataStatus: observation.dataStatus,
+      source: observation.source,
+    }))
+    .sort((left, right) => left.observedAt.localeCompare(right.observedAt));
+
+  const status = first?.dataStatus ?? provider.dataStatus;
+
+  return {
+    series: {
+      crop: { slug: first?.cropSlug ?? query.crop, name: first?.cropName ?? query.crop },
+      market: {
+        slug: first?.marketSlug ?? query.market,
+        name: first?.marketName ?? query.market,
+        state: first?.state ?? '',
+        district: first?.district ?? '',
+      },
+      metric: 'MODAL_PRICE',
+      unit,
+      unitLabel: PRICE_UNIT_LABELS[unit],
+      currency: 'INR',
+      points,
+      isComplete: !result.truncated && points.length < MAX_PAGE_SIZE,
     },
     dataSource: buildDataSource(provider, status),
   };

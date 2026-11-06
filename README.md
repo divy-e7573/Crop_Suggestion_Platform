@@ -207,6 +207,77 @@ curl http://localhost:3000/api/health
 `notConnected` list is intentional: no database or data provider is wired up
 yet, so the endpoint never claims they are healthy.
 
+## Mandi price dashboard
+
+The React app has one dashboard route, `/mandi-prices`. It is a real dashboard,
+not a placeholder: every figure on it comes from the API, and every section
+has its own loading, empty, and error state.
+
+| Section               | What it shows                                                             |
+| --------------------- | ------------------------------------------------------------------------- |
+| Data source           | The active provider, its DEMO/LIVE status, attribution, and freshness       |
+| Filters               | Crop, state, district, market, and observation date range, with a reset    |
+| Price overview        | Minimum, maximum, and average modal price of the records on screen         |
+| Market comparison     | The newest price of the selected crop in every matching market             |
+| Price trend           | The recorded observations of one crop at one market, over time              |
+| Price observations    | Every matching record: crop, market, date, min/max/modal price, unit, source |
+| Relevant markets      | The markets that match the location, with their latest price                |
+
+### How it stays honest
+
+- **Nothing is invented.** The summary, the comparison, and the chart are all
+  calculated from the records the API returned. The chart is only drawn when
+  the source returned more than one observation; with a single point the page
+  says there is not enough data for a trend.
+- **One series is one crop at one market.** The chart refuses to draw a series
+  whose crop or market does not match the selection, so two commodities can
+  never be joined into one line.
+- **A provider failure is not an empty result.** When the upstream fails the
+  page shows the provider error and a retry button; it never falls back to
+  demo rows.
+- **Every record is labelled.** The status badge on each row comes from the
+  record's own `dataStatus`, and the dashboard shows the provider's status
+  from `/api/data-sources`.
+- **Distances are not invented.** The market list is called *relevant markets*,
+  not *nearby markets*, because no source in this project publishes verified
+  coordinates.
+
+### How the filters behave
+
+- **The crop field is free text.** A data source may publish a commodity this
+  project does not know yet, so the crop filter accepts any text. The values
+  in the list under it come from `GET /api/crops`, which is reference data.
+- **The dropdowns cascade.** The district list follows the chosen state, and
+  the market list follows the chosen state and district. Changing the state
+  clears the district and the market, because a market in another district
+  would match nothing.
+- **Every state stays selectable.** The market list is fetched once, without
+  a state filter, so the state dropdown always offers every state the data
+  has. Filtering to one state never traps the farmer on that state.
+- **One request per finished value.** The crop field is applied when the
+  farmer presses Enter or leaves the field, and the dropdowns apply as soon
+  as they change, so a request is never sent for every keystroke.
+
+### The charting library
+
+The trend chart uses [uPlot](https://github.com/leeoniya/uPlot) (`uplot`
+`^1.6.32`, MIT). It was chosen over Recharts and visx because it is about
+50 kB minified with **no dependencies**, while the alternatives pull in a
+state manager and several packages for one line chart. The chart is
+decorative for a screen reader: the same numbers are repeated in a visually
+hidden table, and the chart image carries a label naming the crop, the market,
+the number of observations, and the unit.
+
+### Known limitations
+
+- **The live provider cannot supply a trend.** The data.gov.in resource has no
+  usable date filter and caps every response at 10 records, so a live series
+  usually holds a single observation. In live mode the trend card explains
+  that there is not enough data rather than drawing a line.
+- **The seeded demo data covers 7 days** (2026-01-05 to 2026-01-11) for six
+  crops in six markets. The trend chart therefore shows seven points.
+- **No distance ranking.** See above: the source publishes no coordinates.
+
 ## API conventions
 
 Every `/api` response uses one of two shapes:
@@ -309,6 +380,8 @@ requests, not assumptions:
 | ------ | -------------------- | -------------------------------------------------------- |
 | `GET`  | `/api/health`        | Liveness of the API process only                          |
 | `GET`  | `/api/mandi-prices`  | Price observations, with filters and pagination            |
+| `GET`  | `/api/mandi-prices/history` | The price series for one crop at one market         |
+| `GET`  | `/api/crops`         | The crops the platform supports (reference data)          |
 | `GET`  | `/api/markets`       | Markets and their latest available price                  |
 | `GET`  | `/api/data-sources`  | Which provider is configured, and whether it answered      |
 | `POST` | `/api/farm-profile/analyze` | Validate and store a farmer profile              |
@@ -381,6 +454,74 @@ Query parameters: `market`, `state`, `district`, `limit`, `offset`. Each
 market reports `hasVerifiedCoordinates` and its `latestPrice`. A distance is
 only ever shown when the source published real coordinates; the seeded demo
 markets deliberately have none.
+
+### `GET /api/mandi-prices/history`
+
+The price series the trend chart draws. **Both `crop` and `market` are
+required**, because a series only means something for one commodity at one
+market; a request without one of them is rejected with `400`.
+`from` and `to` are optional and filter the series by observation date.
+
+| Parameter | Required | Meaning                                                |
+| --------- | -------- | ------------------------------------------------------ |
+| `crop`    | yes      | Crop slug, name, or alias                              |
+| `market`  | yes      | Market slug or name                                    |
+| `from`    | no       | Start of the observation date range, `yyyy-mm-dd`      |
+| `to`      | no       | End of the observation date range, `yyyy-mm-dd`        |
+
+```bash
+curl "http://localhost:3000/api/mandi-prices/history?crop=wheat&market=nashik-apmc-maharashtra"
+```
+
+```jsonc
+{
+  "success": true,
+  "data": {
+    "series": {
+      "crop": { "slug": "wheat", "name": "Wheat" },
+      "market": { "slug": "nashik-apmc-maharashtra", "name": "Nashik APMC", "state": "Maharashtra", "district": "Nashik" },
+      "metric": "MODAL_PRICE",
+      "unit": "RUPEES_PER_QUINTAL",
+      "unitLabel": "INR per quintal",
+      "currency": "INR",
+      "points": [
+        { "observedAt": "2026-01-05", "minPrice": 2093, "maxPrice": 2457, "modalPrice": 2275, "dataStatus": "DEMO", "source": "demo-seed" }
+      ],
+      "isComplete": true
+    },
+    "dataSource": { "providerId": "demo-seed", "mode": "demo", "dataStatus": "DEMO", "isDemoData": true, "isLiveData": false, "label": "Demo data", "notice": "..." }
+  }
+}
+```
+
+**The series can never mix two things.** The service drops any row whose crop,
+market, or unit differs from the first row, so a chart can never join two
+commodities or two markets into one line (PRD FR-04).
+
+### `GET /api/crops`
+
+The catalogue of crops the platform supports, read from the `Crop` table. It
+exists because the price list can only return the crops that happen to match
+a filter. The response says clearly that it is **reference data**, not a price
+feed:
+
+```jsonc
+{
+  "success": true,
+  "data": {
+    "crops": [
+      { "slug": "wheat", "name": "Wheat", "aliases": ["Gehun"], "category": "CEREAL", "dataStatus": "DEMO" }
+    ],
+    "catalogue": {
+      "isReferenceData": true,
+      "available": true,
+      "dataStatus": "DEMO",
+      "notice": "These are the crops this platform supports..."
+    },
+    "provider": { "id": "demo-seed", "displayName": "Seeded demonstration data", "mode": "demo", "configured": true }
+  }
+}
+```
 
 ### `GET /api/data-sources`
 
@@ -522,7 +663,7 @@ Run from the repository root:
 | `npm run build`          | Production build of both apps                   |
 | `npm run lint`           | Lint both apps                                  |
 | `npm run typecheck`      | Type-check both apps                            |
-| `npm run test`           | Run backend API unit tests                     |
+| `npm run test`           | Run the backend and frontend unit tests          |
 | `npm run db:generate`    | Build the Prisma client                        |
 | `npm run db:validate`    | Validate the Prisma schema                     |
 | `npm run db:migrate`     | Apply/create migrations (dev database)         |
@@ -544,21 +685,28 @@ frontend/                 React + Vite + TypeScript UI
   src/lib/apiClient.ts    JSON envelope client used by the app
   src/lib/farmProfileValidation.ts  Shared form rules (no React, no imports)
   src/lib/farmProfileApi.ts Client for POST /api/farm-profile/analyze
+  src/lib/mandiApi.ts     Client for the price, market, crop, and history APIs
+  src/lib/priceAnalytics.ts  Price summaries, market comparison, chart points
+  src/lib/useMandiDashboard.ts  The dashboard state and its requests
   src/components/farm-profile/  The farmer profile form
   src/components/dashboard/ The live data-status strip
+  src/components/mandi/   The price dashboard sections
+  src/components/charts/  The uPlot chart wrapper
   src/vite-env.d.ts       Typed import.meta.env declarations
 backend/                  Next.js App Router API service
   src/app/layout.tsx      Minimal root layout (no UI)
   src/app/api/health/     GET /api/health route handler
   src/app/api/markets/    GET /api/markets route handler
   src/app/api/mandi-prices/ GET /api/mandi-prices route handler
+  src/app/api/mandi-prices/history/ GET /api/mandi-prices/history route handler
+  src/app/api/crops/      GET /api/crops route handler
   src/app/api/data-sources/ GET /api/data-sources route handler
   src/app/api/farm-profile/analyze/ POST /api/farm-profile/analyze route handler
   src/app/api/[...path]/  JSON 404 for unknown API paths
   src/lib/api/            Response envelope, errors, validation, CORS, env
   src/lib/db/             Prisma client, driver adapter, repositories
   src/lib/providers/      Provider contract, demo provider, data.gov.in provider
-  src/lib/services/       Mandi price service and the farmer profile service
+  src/lib/services/       Mandi price, crop catalogue, and profile services
   src/proxy.ts            CORS gate and preflight handling for /api/*
   prisma/schema.prisma    Database models and enums
   prisma/migrations/      Generated SQL migrations
@@ -588,12 +736,11 @@ minimum-data rule is met (`insufficient_data` otherwise).
 
 ## Current status
 
-Phases 1 (scaffold), 2 (UI foundation), 3 (API foundation), 4 (database), and 5
-(mandi provider and prices API) are complete. Phase 6 adds the farmer profile
-form on the dashboard, the `POST /api/farm-profile/analyze` endpoint, and the
-`FarmProfile` table.
+Phases 1 (scaffold), 2 (UI foundation), 3 (API foundation), 4 (database), 5
+(mandi provider and prices API), 6 (farmer profile form), and 7 (mandi price
+dashboard) are complete.
 
-The price dashboard, the crop-suitability rules, and the selling-period
-insights are later phases and are not built yet, so the UI never shows a price,
-a forecast, or a crop ranking it cannot back with real data. See `TRACER.md`
-for progress and `PRD.md` for requirements.
+The crop-suitability rules and the selling-period insights are later phases and
+are not built yet, so the UI never shows a forecast or a crop ranking it
+cannot back with real data. See `TRACER.md` for progress and `PRD.md` for
+requirements.

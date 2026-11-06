@@ -29,8 +29,13 @@ export function DashboardPage() {
       <div className={styles.grid}>
         <Card title="Mandi prices" description="Compare prices across markets">
           <p className={styles.placeholder}>
-            The price provider is connected. The price dashboard and filters arrive in
-            Phase 7, so no price is shown here yet.
+            The price dashboard is connected to the live API. Filter by crop, state,
+            district, market, and date to compare prices and see how they moved.
+          </p>
+          <p className={styles.placeholder}>
+            <LinkButton to="/mandi-prices" variant="secondary" size="sm">
+              Open the mandi price dashboard
+            </LinkButton>
           </p>
         </Card>
 

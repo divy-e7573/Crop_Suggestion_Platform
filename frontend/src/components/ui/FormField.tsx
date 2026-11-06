@@ -80,6 +80,12 @@ function controlClassName(base: string, invalid: boolean): string {
 export type TextFieldProps = Omit<FormFieldProps, 'children'> & {
   value: string;
   onChange: (value: string) => void;
+  /**
+   * Called when the value is finished: on Enter and when the field loses
+   * focus. A filter that sends a request uses this so one request is made
+   * per finished value instead of one per keystroke.
+   */
+  onCommit?: () => void;
   placeholder?: string;
   inputMode?: 'text' | 'numeric' | 'decimal';
   /** The id of a `datalist` offering suggestions for this field. */
@@ -89,6 +95,7 @@ export type TextFieldProps = Omit<FormFieldProps, 'children'> & {
 export function TextField({
   value,
   onChange,
+  onCommit,
   placeholder,
   inputMode,
   list,
@@ -105,6 +112,43 @@ export function TextField({
           placeholder={placeholder}
           inputMode={inputMode}
           list={list}
+          onChange={(event) => onChange(event.target.value)}
+          onKeyDown={(event) => {
+            // Enter only stops the form from submitting when the field asked
+            // for its value to be committed. Without a commit handler the
+            // form keeps its normal Enter-to-submit behaviour.
+            if (event.key !== 'Enter' || !onCommit) return;
+            event.preventDefault();
+            onCommit?.();
+          }}
+          onBlur={() => onCommit?.()}
+        />
+      )}
+    </FormField>
+  );
+}
+
+export type DateFieldProps = Omit<FormFieldProps, 'children'> & {
+  value: string;
+  onChange: (value: string) => void;
+  /** The earliest day the browser should offer, as yyyy-mm-dd. */
+  min?: string;
+  /** The latest day the browser should offer, as yyyy-mm-dd. */
+  max?: string;
+};
+
+/** A calendar field, used for the observation date range. */
+export function DateField({ value, onChange, min, max, ...field }: DateFieldProps) {
+  return (
+    <FormField {...field}>
+      {({ invalid, ...control }: ControlProps) => (
+        <input
+          {...control}
+          className={controlClassName(styles.input, invalid)}
+          type="date"
+          value={value}
+          min={min}
+          max={max}
           onChange={(event) => onChange(event.target.value)}
         />
       )}

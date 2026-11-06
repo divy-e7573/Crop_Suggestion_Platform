@@ -1,0 +1,107 @@
+.wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-size-sm);
+}
+
+.table th,
+.table td {
+  padding: var(--space-3);
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--color-neutral-200);
+}
+
+.table thead th {
+  color: var(--color-neutral-700);
+  font-size: var(--font-size-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+
+.priceColumn {
+  white-space: nowrap;
+}
+
+.unitColumn,
+.sourceColumn {
+  white-space: nowrap;
+}
+
+.location {
+  display: block;
+  color: var(--color-neutral-600);
+  font-size: var(--font-size-xs);
+}
+
+.marketButton {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--color-brand-700);
+  font: inherit;
+  text-align: left;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.sourceName {
+  display: block;
+  margin-top: var(--space-1);
+  color: var(--color-neutral-600);
+  font-size: var(--font-size-xs);
+}
+
+/*
+ * On a narrow screen the table becomes a stack of cards. The explicit ARIA
+ * roles above keep the table meaning for a screen reader, because changing
+ * the display would otherwise drop it.
+ */
+@media (max-width: 47.99rem) {
+  .table,
+  .table tbody,
+  .table tr,
+  .table td {
+    display: block;
+    width: 100%;
+  }
+
+  .table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  .table tr {
+    margin-bottom: var(--space-3);
+    padding: var(--space-3);
+    border: 1px solid var(--color-neutral-200);
+    border-radius: var(--radius-md);
+    background-color: var(--color-neutral-50);
+  }
+
+  .table td {
+    display: grid;
+    grid-template-columns: 10rem minmax(0, 1fr);
+    gap: var(--space-2);
+    padding: var(--space-1) 0;
+    border-bottom: 0;
+  }
+
+  .table td::before {
+    content: attr(data-label);
+    color: var(--color-neutral-600);
+    font-size: var(--font-size-xs);
+    font-weight: 600;
+  }
+}
