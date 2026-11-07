@@ -22,6 +22,7 @@ const {
   countFarmProfiles,
   findLatestFarmProfile,
   getPriceHistory,
+  listCropSuitabilityRules,
   listMarketRecords,
   listCrops,
   listMarkets,
@@ -200,6 +201,52 @@ async function main() {
     latest === null || latest.id === newest?.id,
     'findLatestFarmProfile returns the newest profile',
     String(latest?.id),
+  );
+
+  console.log('\n--- crop suitability rules (Phase 8) ---');
+  const rules = await listCropSuitabilityRules();
+  check(rules.length === 6, 'six crop suitability rules are listed', String(rules.length));
+
+  const activeRuleCount = await prisma.cropSuitabilityRule.count({
+    where: { isActive: true },
+  });
+  check(
+    rules.length === activeRuleCount,
+    'only the active rules are listed',
+    rules.length + '/' + activeRuleCount,
+  );
+
+  check(
+    rules.every((rule) => rule.cropSlug.trim() !== '' && rule.cropName.trim() !== ''),
+    'every rule names the crop it is about',
+  );
+
+  check(
+    rules.every((rule) => rule.dataStatus === 'DEMO'),
+    'every rule is labelled DEMO',
+  );
+
+  check(
+    rules.every((rule) => rule.explanation.trim().length > 20),
+    'every rule carries a plain-language explanation',
+  );
+
+  check(
+    rules.every(
+      (rule) =>
+        rule.minLandAreaAcre === null ||
+        (typeof rule.minLandAreaAcre === 'number' && Number.isFinite(rule.minLandAreaAcre)),
+    ),
+    'the land area limits come back as numbers',
+  );
+
+  check(
+    rules.every(
+      (rule) =>
+        rule.maxLandAreaAcre === null ||
+        (typeof rule.maxLandAreaAcre === 'number' && Number.isFinite(rule.maxLandAreaAcre)),
+    ),
+    'the maximum land area comes back as a number',
   );
 
   console.log('\nFAILURES: ' + failures);

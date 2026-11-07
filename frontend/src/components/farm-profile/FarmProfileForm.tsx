@@ -24,6 +24,7 @@ import { Button } from '../ui/Button';
 import { RadioGroup, SelectField, TextField } from '../ui/FormField';
 import { StateMessage } from '../ui/StateMessage';
 import { StatusBadge } from '../ui/StatusBadge';
+import { ProfileAnalysisView } from '../analysis/ProfileAnalysisView';
 import styles from './FarmProfileForm.module.css';
 
 /** The id of the datalist that offers state suggestions. */
@@ -49,9 +50,10 @@ type FieldErrors = Partial<Record<FarmProfileField, string>>;
  * stored (AGENTS.md section 5). Values are never cleared when a request
  * fails, so a farmer does not have to type the form a second time.
  *
- * Crop suggestions and selling-period insights are not shown here. That is the
- * Phase 8 rule engine, and the API says so in its own response, so an empty
- * list is never shown as if no crop suited the farm.
+ * The API also returns the Phase 8 analysis for the saved profile: the
+ * ranked crop suggestions and the selling-period insights. They are shown
+ * under the saved details, so the farmer sees the result of their own
+ * submission rather than a sample.
  */
 export function FarmProfileForm() {
   const [values, setValues] = useState<FarmProfileValues>({ ...EMPTY_FARM_PROFILE });
@@ -206,9 +208,10 @@ export function FarmProfileForm() {
             </p>
           ) : null}
 
-          <p className={styles.notice}>{result.analysis.message}</p>
           <p className={styles.reference}>Profile reference: {result.profileId}</p>
         </div>
+
+        <ProfileAnalysisView analysis={result.analysis} />
 
         <div className={styles.actions}>
           <Button variant="secondary" onClick={handleStartAgain}>

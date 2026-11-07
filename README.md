@@ -69,13 +69,17 @@ MANDI_DATA_PROVIDER_MODE=demo
 MANDI_PROVIDER_API_KEY=
 AI_API_KEY=
 AI_MODEL=
+AI_BASE_URL=https://api.openai.com/v1
+AI_ENABLE_NARRATIVE=true
 FARM_PROFILE_RETENTION_DAYS=90
 ```
 
 `CORS_ALLOWED_ORIGINS` is required for the browser to reach the API.
 `MANDI_DATA_PROVIDER_MODE` selects the price data source (see
-[Mandi data providers](#mandi-data-providers)). `AI_API_KEY` and `AI_MODEL`
-are declared ahead of the phase that uses them.
+[Mandi data providers](#mandi-data-providers)). `AI_API_KEY`, `AI_MODEL`,
+`AI_BASE_URL`, and `AI_ENABLE_NARRATIVE` control the optional server-side
+narrative. The app needs none of them: its deterministic explanations work
+without an AI key.
 `FARM_PROFILE_RETENTION_DAYS` sets how long a saved farmer profile is kept
 (see [Privacy and retention](#privacy-and-retention)).
 
@@ -159,7 +163,9 @@ npm run db:studio     # opens Prisma Studio in your browser
 | `CropSuitabilityRule`     | Versioned soil/season/irrigation guidance for crop suggestions  |
 | `FarmProfile`             | A saved farmer profile: location, soil, season, land area       |
 
-Authentication and forecasts are later phases and have no tables yet.
+Forecasts are calculated from observed prices when the documented threshold is
+met; they are not stored as separate database records. Authentication remains
+a later phase and has no table yet.
 
 Only variables prefixed with `VITE_` are exposed to the browser bundle. Never put a
 database URL or a secret in the frontend environment file.
@@ -204,8 +210,9 @@ curl http://localhost:3000/api/health
 ```
 
 `status: "ok"` reports **only that the API process is alive**. The
-`notConnected` list is intentional: no database or data provider is wired up
-yet, so the endpoint never claims they are healthy.
+`notConnected` list is intentional: this lightweight endpoint does not test
+the database, the mandi provider, or the optional AI provider. The list means
+"not checked by this request", not "not integrated".
 
 ## Mandi price dashboard
 
@@ -238,6 +245,10 @@ has its own loading, empty, and error state.
 - **Every record is labelled.** The status badge on each row comes from the
   record's own `dataStatus`, and the dashboard shows the provider's status
   from `/api/data-sources`.
+  The same rule applies to the Phase 8 analysis: the freshness label of a
+  trend or a forecast is worked out from every observation that was used, so
+  a series the live provider answered partly from its page cache is reported
+  as `Recent` rather than `Live`.
 - **Distances are not invented.** The market list is called *relevant markets*,
   not *nearby markets*, because no source in this project publishes verified
   coordinates.
@@ -277,6 +288,113 @@ the number of observations, and the unit.
 - **The seeded demo data covers 7 days** (2026-01-05 to 2026-01-11) for six
   crops in six markets. The trend chart therefore shows seven points.
 - **No distance ranking.** See above: the source publishes no coordinates.
+
+## Crop suggestions and selling insights
+
+The farmer profile is turned into a ranked crop shortlist, an observed price
+trend, and a selling-period explanation. Each part lives in its own module
+under `backend/src/lib/services/`, so each can be tested on its own:
+
+| Module                       | What it does                                        |
+| ---------------------------- | --------------------------------------------------- |
+| `cropSuitabilityService.ts`  | Matches the profile against the rules and ranks them  |
+| `trendAnalysisService.ts`    | Works out the direction of the observed prices        |
+| `forecastService.ts`         | Decides whether an estimate is allowed, and makes it  |
+| `sellingInsightService.ts`   | Turns both into plain language                        |
+| `aiNarrativeProvider.ts`     | Optional extra wording from an AI provider           |
+| `profileAnalysisService.ts`  | Puts the pieces together for one profile             |
+
+### The suitability rules
+
+The rules are the seeded `CropSuitabilityRule` rows. Each rule names the soil
+types, seasons, irrigation types, states, and land-area range it applies to.
+An empty list means "no restriction on this factor".
+
+For every factor the profile can contradict:
+
+- **A contradiction removes the crop** from the shortlist, and the reason is
+  reported. The crops that were left out are listed with their reasons, so an
+  empty shortlist is never a mystery.
+- **A factor that could not be checked keeps the crop.** Only irrigation is
+  optional in the product, so this happens when the farmer left it blank (or
+  chose "other"). Missing information is never counted as a confirmed match:
+  it lowers the score and the confidence, and it is listed under the
+  suggestion.
+- **The land area is converted to acres** before it is compared, because the
+  rule limits are stored in acres while the farmer may enter hectares. Both
+  ends of the range are inclusive.
+
+### The ranking
+
+- **Score** - the share of the rule's restricted factors the profile
+  confirmed, as a percentage. A factor the rule does not restrict is reported
+  but does not raise the score.
+- **Confidence** - `high` when every factor was checked and at least three
+  matched, `medium` when something could not be checked but at least three
+  matched, `low` otherwise.
+- **Order** - score, then confidence, then the crop name. The same profile
+  always produces the same list.
+
+### The observed trend
+
+Only observations of **one crop at one market in one price unit** are used.
+Observations of another crop, market, or unit are dropped rather than mixed
+in, prices that are not real numbers are dropped, and observations recorded
+on the same date are averaged into one point. The daily points are sorted
+oldest first and a straight line is fitted to them by least squares. The
+change of that line across the observed period is compared with the average
+price: a change of less than 2 percent is reported as `stable`, otherwise
+the direction of the line is reported as `rising` or `falling`. Fewer than
+three observations on three different dates is reported as
+`insufficient_data`.
+
+### The forecast threshold
+
+A number is only produced when the observations clear all of these:
+
+| Requirement                    | Value                              |
+| ------------------------------ | ---------------------------------- |
+| Observations                   | at least 7                          |
+| Different observation dates    | at least 5                          |
+| Calendar days of history       | at least 7                          |
+| Crop, market, and price unit   | exactly one of each                 |
+
+When they do not, the response carries `"status": "insufficient_data"` with
+the reason and **no number at all**.
+
+When they do, the estimate is a straight line fitted by least squares and read
+7 days beyond the last observation. The range around it is the estimate plus
+or minus 1.28 times the standard error of the fit, which is an approximate 80
+percent band of the past spread and not a guarantee. The data-quality label
+is `low` with fewer than 14 observations, fewer than 7 days of history, or a
+fit that explains under 30 percent of the variation; `medium` with fewer than
+30 observations or a fit under 60 percent; `high` otherwise.
+
+The seeded demo series (7 days) clears the threshold and is labelled `low`
+quality. The live provider usually returns a single observation for a market,
+so it does not clear it and no estimate is shown.
+
+### The AI provider
+
+The AI provider is **optional and off by default**. The ranking, the trend,
+and the forecast are calculated by the deterministic engine, and the plain
+language around them is written by that same engine. With no `AI_API_KEY`
+the product behaves exactly the same.
+
+When a key is configured, the provider may only add one extra sentence of
+wording. Three rules keep it safe:
+
+- The key is read on the server and never reaches the browser.
+- The text is rejected if it contains a digit, so it can never state a price,
+  a percentage, or a count, and it never replaces the structured values.
+- Only the crop name, the market name, the observed direction, and the data
+  status are sent. No state, district, land area, village, or PIN code.
+
+### What the guidance never says
+
+The selling-period text never names a date as a good day to sell, never
+promises a price or a profit, and never tells a farmer to delay a sale on the
+strength of a short history.
 
 ## API conventions
 
@@ -596,20 +714,54 @@ curl -X POST http://localhost:3000/api/farm-profile/analyze \
       "notice": "These are seeded demonstration records. They are not real mandi prices."
     },
     "analysis": {
-      "status": "not_computed",
-      "cropSuggestions": null,
-      "sellingInsights": null,
-      "message": "Your profile was validated and saved. Crop suggestions and selling-period insights are added in a later phase, so no ranking is shown yet."
+      "status": "computed",
+      "message": "Your profile was matched against the crop rules and the price observations for your area.",
+      "cropSuggestions": {
+        "suggestions": [
+          {
+            "rank": 1,
+            "crop": { "slug": "cotton", "name": "Cotton", "category": "CASH" },
+            "score": 100,
+            "confidence": "high",
+            "matchedCriteria": ["Your soil type (black) is one this rule allows."],
+            "missingInformation": [],
+            "explanation": "It matches your profile because your soil type (black) is one this rule allows.",
+            "guidance": "Cotton is a kharif cash crop on black or red soil in much of central and western India.",
+            "rule": { "version": "demo-v1", "source": "demo-seed", "dataStatus": "DEMO" },
+            "isCurrentCrop": false
+          }
+        ],
+        "notRecommended": [],
+        "ruleVersion": "demo-v1",
+        "method": "Each crop is scored by the share of its rule that the profile confirmed.",
+        "missingInformation": [],
+        "landAreaInAcres": 2.5,
+        "ruleDataStatus": "DEMO",
+        "ruleSource": "demo-seed"
+      },
+      "sellingInsights": {
+        "status": "available",
+        "summary": "The observed prices for Cotton at Nashik APMC were rising over the period that was observed.",
+        "points": ["The observed modal price at Nashik APMC went up, from 2000 to 2300 INR per quintal."],
+        "caveats": ["This is observed market information, not advice on when to sell."],
+        "observedTrend": { "direction": "rising", "observationCount": 7 },
+        "forecast": { "status": "ok", "pointEstimate": 2400, "horizonDays": 7, "dataQuality": "low" },
+        "narrative": null,
+        "dataStatus": "DEMO",
+        "isDemoData": true,
+        "method": "The insights are built from two calculations and nothing else."
+      }
     },
     "notice": "Your details were checked and stored so the app can find matching markets. Nothing here is a promise about yield, price, or profit."
   }
 }
 ```
 
-**What this endpoint does not do.** It does not rank crops and it does not
-produce a forecast. Those belong to the Phase 8 rule engine, so the response
-says `"status": "not_computed"` instead of returning an empty list that would
-look like "no crop suits this farm".
+**What the analysis block contains.** The ranked crop suggestions and the
+selling-period insights, both calculated by the rule engine described below.
+`analysis.status` is `computed` when everything was read, `partial` when the
+price records could not be read but the crop rules could, and `unavailable`
+when the rules themselves could not be read.
 
 **A failed data source does not lose the profile.** If the provider cannot be
 read, the profile is still stored and the response reports
@@ -630,6 +782,18 @@ caused it:
   }
 }
 ```
+
+### `GET /api/farm-profile/latest`
+
+Returns the analysis of the profile that was saved most recently, recomputed
+from the current data. The crop-suggestions page uses it, so the page still
+works after a reload.
+
+The response is `200` with `profileId: null` and an explanation when no
+profile has been saved yet.
+
+The optional village or PIN detail is deliberately **not** repeated in this
+response. The analysis does not use it and the page does not need it.
 
 ## Privacy and retention
 
@@ -684,11 +848,14 @@ frontend/                 React + Vite + TypeScript UI
   src/lib/apiConfig.ts    Reads VITE_API_BASE_URL for API calls
   src/lib/apiClient.ts    JSON envelope client used by the app
   src/lib/farmProfileValidation.ts  Shared form rules (no React, no imports)
-  src/lib/farmProfileApi.ts Client for POST /api/farm-profile/analyze
+  src/lib/farmProfileApi.ts Client for the farm-profile analysis endpoints
+  src/lib/analysisPresentation.ts Wording for scores, confidence, trends, quality
   src/lib/mandiApi.ts     Client for the price, market, crop, and history APIs
   src/lib/priceAnalytics.ts  Price summaries, market comparison, chart points
   src/lib/useMandiDashboard.ts  The dashboard state and its requests
+  src/lib/useLatestAnalysis.ts  Loads the analysis shown on the suggestions page
   src/components/farm-profile/  The farmer profile form
+  src/components/analysis/ The ranked suggestions and the selling insights
   src/components/dashboard/ The live data-status strip
   src/components/mandi/   The price dashboard sections
   src/components/charts/  The uPlot chart wrapper
@@ -702,11 +869,18 @@ backend/                  Next.js App Router API service
   src/app/api/crops/      GET /api/crops route handler
   src/app/api/data-sources/ GET /api/data-sources route handler
   src/app/api/farm-profile/analyze/ POST /api/farm-profile/analyze route handler
+  src/app/api/farm-profile/latest/ GET /api/farm-profile/latest route handler
   src/app/api/[...path]/  JSON 404 for unknown API paths
   src/lib/api/            Response envelope, errors, validation, CORS, env
   src/lib/db/             Prisma client, driver adapter, repositories
   src/lib/providers/      Provider contract, demo provider, data.gov.in provider
   src/lib/services/       Mandi price, crop catalogue, and profile services
+  src/lib/services/cropSuitabilityService.ts  The crop ranking rule engine
+  src/lib/services/trendAnalysisService.ts    The observed price direction
+  src/lib/services/forecastService.ts         The forecast threshold and baseline
+  src/lib/services/sellingInsightService.ts   The plain-language guidance
+  src/lib/services/aiNarrativeProvider.ts     The optional AI wording
+  src/lib/services/profileAnalysisService.ts  Puts the pieces together
   src/proxy.ts            CORS gate and preflight handling for /api/*
   prisma/schema.prisma    Database models and enums
   prisma/migrations/      Generated SQL migrations
@@ -737,10 +911,12 @@ minimum-data rule is met (`insufficient_data` otherwise).
 ## Current status
 
 Phases 1 (scaffold), 2 (UI foundation), 3 (API foundation), 4 (database), 5
-(mandi provider and prices API), 6 (farmer profile form), and 7 (mandi price
-dashboard) are complete.
+(mandi provider and prices API), 6 (farmer profile form), 7 (mandi price
+dashboard), and 8 (crop suitability and selling-period insights) are
+complete.
 
-The crop-suitability rules and the selling-period insights are later phases and
-are not built yet, so the UI never shows a forecast or a crop ranking it
-cannot back with real data. See `TRACER.md` for progress and `PRD.md` for
-requirements.
+The farmer profile now produces a ranked crop shortlist, an observed price
+trend, and a baseline estimate that is only shown when the observations clear
+the documented threshold. Phase 9 (integration, security, and accessibility
+checks) and Phase 10 (final polish and documentation) are still to come. See
+`TRACER.md` for progress and `PRD.md` for requirements.

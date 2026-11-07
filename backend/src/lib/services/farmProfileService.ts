@@ -6,14 +6,15 @@
  * can understand. The route handler only parses, delegates, and wraps the
  * result in the standard envelope (PRD FR-09, AGENTS.md section 2).
  *
- * Scope note: this phase validates and stores the profile only. Crop
- * suggestions and selling-period insights are Phase 8, so the response says
- * so explicitly instead of returning an empty suggestion list that could be
- * mistaken for "no crops suit this farm".
+ * Scope note: this module validates and stores the profile and works out
+ * what data the active provider has for that location. The crop ranking,
+ * the trend, and the forecast live in their own modules and are put together
+ * by the profile analysis orchestrator.
  */
 import { z } from 'zod';
 
 import { isProviderError } from '../providers/errors.ts';
+import { ACRES_PER_HECTARE, toAcres } from './landArea.ts';
 import type {
   DataStatusValue,
   MandiPriceProvider,
@@ -61,7 +62,7 @@ export const MAX_CROP_LENGTH = 120;
 export const MAX_LAND_AREA_ACRES = 1000;
 
 /** Hectares to acres, used for the range check. */
-export const ACRES_PER_HECTARE = 2.47105;
+export { ACRES_PER_HECTARE };
 
 /** A PIN code is exactly six digits. */
 export const PIN_CODE_LENGTH = 6;
@@ -186,25 +187,8 @@ export type MatchingDataDto = {
   notice: string;
 };
 
-export type FarmProfileAnalysisDto = {
-  profileId: string;
-  savedAt: string;
-  profile: FarmProfileDto;
-  matchingData: MatchingDataDto;
-  analysis: {
-    status: 'not_computed';
-    cropSuggestions: null;
-    sellingInsights: null;
-    message: string;
-  };
-  notice: string;
-};
-
 /** Converts the submitted area into acres, for a comparable number. */
-export function toAcres(landArea: number, unit: string): number {
-  const acres = unit === 'HECTARE' ? landArea * ACRES_PER_HECTARE : landArea;
-  return Math.round(acres * 100) / 100;
-}
+export { toAcres };
 
 /** Counts the distinct markets in a list of observations. */
 function countDistinctMarkets(observations: ProviderObservation[]): number {

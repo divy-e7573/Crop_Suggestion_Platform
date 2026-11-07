@@ -41,15 +41,22 @@ export function DashboardPage() {
 
         <Card title="Crop suggestions" description="Ranked by season and soil type">
           <p className={styles.placeholder}>
-            Your profile is validated and saved. The rule engine that ranks crops
-            arrives in Phase 8, and every suggestion will include its reasons.
+            Your profile is validated and saved, then matched against the crop
+            suitability rules. Every suggestion shows the reasons behind it and
+            which details were missing.
+          </p>
+          <p className={styles.placeholder}>
+            <LinkButton to="/crop-suggestions" variant="secondary" size="sm">
+              Open your crop suggestions
+            </LinkButton>
           </p>
         </Card>
 
         <Card title="Selling-period insights" description="Trend and forecast evidence">
           <p className={styles.placeholder}>
-            A price range appears only when enough history exists. Otherwise the app
-            shows <strong>Not enough data to estimate</strong>.
+            The observed price trend is worked out from the prices that were actually
+            recorded. A price range appears only when enough history exists.
+            Otherwise the app shows <strong>Not enough data to estimate</strong>.
           </p>
         </Card>
       </div>

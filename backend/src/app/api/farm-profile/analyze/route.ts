@@ -4,25 +4,31 @@ import { jsonOk, toErrorResponse } from '@/lib/api/response';
 import { parseJsonBody } from '@/lib/api/validation';
 import { createFarmProfile } from '@/lib/db/repositories';
 import { getMandiProvider } from '@/lib/providers/registry';
+import { createAiNarrativeProvider } from '@/lib/services/aiNarrativeProvider';
 import {
   farmProfileSchema,
   isRecoverableProviderFailure,
   summariseMatchingData,
   toAcres,
   unavailableMatchingData,
-  type FarmProfileAnalysisDto,
 } from '@/lib/services/farmProfileService';
+import {
+  computeProfileAnalysis,
+  createDatabaseSuitabilityRuleSource,
+  type FarmProfileAnalysisDto,
+} from '@/lib/services/profileAnalysisService';
 
 /**
- * `POST /api/farm-profile/analyze` - validate and store a farmer profile.
+ * The farmer profile endpoint.
  *
  * The body is validated again on the server, whatever the browser did
- * (AGENTS.md section 5). The profile is then stored and the response reports
- * what the active data source could resolve for that location.
+ * (AGENTS.md section 5). The profile is stored, and the response then
+ * carries the Phase 8 analysis: the ranked crop suggestions and the
+ * selling-period insights.
  *
- * Crop suggestions and selling-period insights are not computed here: that is
- * the Phase 8 rule engine. The response says so explicitly, so an empty
- * suggestion list is never mistaken for "no crops suit this farm".
+ * A provider failure is never fatal and never falls back to demonstration
+ * rows. The profile is still stored, the crop suggestions still stand, and
+ * the market part of the analysis says why it is empty (PRD section 12).
  */
 export async function POST(request: Request): Promise<Response> {
   // Marks the route as request-dependent, so it is never prerendered. The
@@ -35,18 +41,18 @@ export async function POST(request: Request): Promise<Response> {
     const provider = getMandiProvider();
 
     let matching;
+    let marketDataUnavailable: string | null = null;
+
     try {
       matching = await summariseMatchingData(provider, input);
     } catch (error) {
       if (!isRecoverableProviderFailure(error)) throw error;
 
       // The profile itself is valid, so it is still stored. The response says
-      // the data source could not be read instead of pretending it was
-      // (PRD section 12).
-      matching = unavailableMatchingData(
-        provider,
-        error instanceof Error ? error.message : 'The data source could not be read.',
-      );
+      // the data source could not be read instead of pretending it was.
+      marketDataUnavailable =
+        error instanceof Error ? error.message : 'The data source could not be read.';
+      matching = unavailableMatchingData(provider, marketDataUnavailable);
     }
 
     const stored = await createFarmProfile({
@@ -64,6 +70,26 @@ export async function POST(request: Request): Promise<Response> {
       matchingObservations: matching.priceObservations,
       matchingMarkets: matching.markets,
       matchingIsComplete: matching.isComplete,
+    });
+
+    const analysis = await computeProfileAnalysis({
+      profile: {
+        id: stored.id,
+        state: stored.state,
+        district: stored.district,
+        soilType: stored.soilType,
+        season: stored.season,
+        landArea: Number(stored.landArea),
+        landAreaUnit: stored.landAreaUnit,
+        villageOrPin: stored.villageOrPin,
+        irrigationType: stored.irrigationType,
+        currentCrop: stored.currentCrop,
+        createdAt: stored.createdAt.toISOString(),
+      },
+      provider,
+      rules: createDatabaseSuitabilityRuleSource(),
+      ai: createAiNarrativeProvider(),
+      marketDataUnavailable,
     });
 
     const body: FarmProfileAnalysisDto = {
@@ -85,12 +111,10 @@ export async function POST(request: Request): Promise<Response> {
       },
       matchingData: matching,
       analysis: {
-        status: 'not_computed',
-        cropSuggestions: null,
-        sellingInsights: null,
-        message:
-          'Your profile was validated and saved. Crop suggestions and selling-period ' +
-          'insights are added in a later phase, so no ranking is shown yet.',
+        status: analysis.status,
+        message: analysis.message,
+        cropSuggestions: analysis.cropSuggestions,
+        sellingInsights: analysis.sellingInsights,
       },
       notice:
         'Your details were checked and stored so the app can find matching markets. ' +

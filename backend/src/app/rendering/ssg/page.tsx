@@ -20,8 +20,11 @@ const PROJECT_FACTS = [
   { term: 'Product', value: 'Krishi Mandi Price Prediction and Crop Suggestion Platform' },
   { term: 'Frontend', value: 'React + Vite + TypeScript (separate standalone app)' },
   { term: 'Backend', value: 'Next.js App Router + TypeScript (this app)' },
-  { term: 'Database', value: 'PostgreSQL with Prisma, added in a later phase' },
-  { term: 'Mandi data', value: 'No live provider connected yet; demo data only' },
+  { term: 'Database', value: 'PostgreSQL with Prisma, with migrations and demo seeds' },
+  {
+    term: 'Mandi data',
+    value: 'A demo provider and a verified data.gov.in provider, switchable by environment',
+  },
 ];
 
 /**

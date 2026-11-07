@@ -469,6 +469,41 @@ export async function findLatestFarmProfile() {
 }
 
 /**
+ * The active crop suitability rules.
+ *
+ * Phase 8 needs the crop name and slug next to each rule, because a
+ * suggestion has to name the crop it is about. Only active rules are read,
+ * and the rule version is kept so the ranking can say which rule set
+ * produced it.
+ */
+export async function listCropSuitabilityRules() {
+  const rows = await prisma.cropSuitabilityRule.findMany({
+    where: { isActive: true },
+    include: {
+      crop: { select: { slug: true, name: true, category: true } },
+    },
+    orderBy: [{ crop: { name: 'asc' } }, { ruleVersion: 'asc' }],
+  });
+
+  return rows.map((row) => ({
+    cropId: row.cropId,
+    cropSlug: row.crop.slug,
+    cropName: row.crop.name,
+    cropCategory: row.crop.category,
+    ruleVersion: row.ruleVersion,
+    soilTypes: row.soilTypes,
+    seasons: row.seasons,
+    irrigationTypes: row.irrigationTypes,
+    applicableStates: row.applicableStates,
+    minLandAreaAcre: row.minLandAreaAcre === null ? null : Number(row.minLandAreaAcre),
+    maxLandAreaAcre: row.maxLandAreaAcre === null ? null : Number(row.maxLandAreaAcre),
+    explanation: row.explanation,
+    dataStatus: row.dataStatus,
+    source: row.source,
+  }));
+}
+
+/**
  * Removes profiles older than the retention window.
  *
  * This is the mechanism behind the documented retention rule. It is never
