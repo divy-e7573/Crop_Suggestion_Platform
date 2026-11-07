@@ -38,11 +38,19 @@ type ApiEnvelope<T> =
   | { success: true; data: T }
   | { success: false; error: { code: string; message: string; details?: ApiErrorDetail[] } };
 
-/** Fetches a resource and returns the `data` block of a successful response. */
-export async function getJson<T>(path: string): Promise<T> {
+/**
+ * Fetches a resource and returns the `data` block of a successful response.
+ *
+ * Extra headers may be passed, for example the access token that authorises
+ * reading one saved profile back.
+ */
+export async function getJson<T>(
+  path: string,
+  options: { headers?: Record<string, string> } = {},
+): Promise<T> {
   return requestJson<T>(path, {
     method: 'GET',
-    headers: { Accept: 'application/json' },
+    headers: { Accept: 'application/json', ...(options.headers ?? {}) },
   });
 }
 

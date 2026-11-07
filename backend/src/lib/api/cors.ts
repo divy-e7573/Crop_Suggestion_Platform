@@ -2,7 +2,7 @@ import type { CorsConfig } from './env.ts';
 import { isOriginAllowed } from './env.ts';
 
 export const ALLOWED_METHODS = 'GET, POST, PATCH, PUT, DELETE, OPTIONS';
-export const ALLOWED_HEADERS = 'Content-Type, Authorization, Accept';
+export const ALLOWED_HEADERS = 'Content-Type, Authorization, Accept, X-Analysis-Token';
 export const EXPOSED_HEADERS = 'Content-Type';
 export const PREFLIGHT_MAX_AGE_SECONDS = '600';
 

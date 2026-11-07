@@ -160,6 +160,14 @@ export type ProfileAnalysisBlock = {
 
 export type FarmProfileAnalysisDto = {
   profileId: string;
+  /**
+   * The unguessable token that authorises reading this profile back.
+   *
+   * The backend returns it once, here, and stores only its hash. The browser
+   * keeps it in session storage, so it is never shared with another
+   * browser and never leaves this tab.
+   */
+  analysisToken: string;
   savedAt: string;
   profile: FarmProfileDto;
   matchingData: MatchingDataDto;
@@ -168,14 +176,14 @@ export type FarmProfileAnalysisDto = {
 };
 
 /**
- * The analysis of the most recently saved profile.
+ * The analysis of one saved profile.
  *
  * The optional village or PIN detail is not repeated here, because the
  * analysis does not use it and the page does not need it.
  */
-export type LatestProfileAnalysisDto = {
-  profileId: string | null;
-  savedAt: string | null;
+export type SavedProfileAnalysisDto = {
+  profileId: string;
+  savedAt: string;
   profile: {
     state: string;
     district: string;
@@ -186,7 +194,7 @@ export type LatestProfileAnalysisDto = {
     landAreaInAcres: number;
     irrigationType: string | null;
     currentCrop: string | null;
-  } | null;
+  };
   analysis: ProfileAnalysisBlock;
   notice: string;
 };
@@ -196,7 +204,17 @@ export function postFarmProfile(body: FarmProfileRequest): Promise<FarmProfileAn
   return postJson<FarmProfileAnalysisDto>('/api/farm-profile/analyze', body);
 }
 
-/** Reads the analysis of the most recently saved profile. */
-export function fetchLatestAnalysis(): Promise<LatestProfileAnalysisDto> {
-  return getJson<LatestProfileAnalysisDto>('/api/farm-profile/latest');
+/**
+ * Reads a saved profile back, using the access token that was handed out
+ * when it was created.
+ *
+ * The token travels in a request header rather than in the query string, so
+ * it never appears in a URL or in a browser history entry.
+ */
+export function fetchSavedAnalysis(
+  analysisToken: string,
+): Promise<SavedProfileAnalysisDto> {
+  return getJson<SavedProfileAnalysisDto>('/api/farm-profile/analysis', {
+    headers: { 'X-Analysis-Token': analysisToken },
+  });
 }

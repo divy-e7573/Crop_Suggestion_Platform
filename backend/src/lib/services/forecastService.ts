@@ -50,9 +50,13 @@ export const FORECAST_HORIZON_DAYS = 7;
 /**
  * The multiplier used for the range around the estimate.
  *
- * 1.2816 is the two-sided 80 percent normal multiplier, so the range is an
- * approximate 80 percent band around the fitted line. It is a statement
- * about the spread of the past observations, not a promise about the future.
+ * 1.2816 is the two-sided 80 percent normal multiplier. It is used to
+ * scale the standard error of the fit, which makes the range a description
+ * of how far the observed prices normally sat from the fitted line. It is
+ * **not** a calibrated prediction interval: the uncertainty of the fitted
+ * line itself is not included, and the range does not widen the further
+ * the line is read beyond the last observation. It is a rough guide, and
+ * the method string says so (Phase 9 terminology review).
  */
 export const FORECAST_BAND_MULTIPLIER = 1.2816;
 
@@ -112,14 +116,20 @@ export type ForecastDto = {
 export const FORECAST_METHOD =
   'A straight line is fitted by least squares to the daily modal prices of one crop ' +
   'at one market in one unit, and the line is read 7 days beyond the last observation. ' +
-  'The range around it is the estimate plus or minus 1.28 times the standard error of ' +
-  'the fit, which is an approximate 80 percent band of the past spread and not a ' +
-  'guarantee. The lower end is never allowed below zero, because a price cannot be ' +
-  'negative. The quality label is low with fewer than 14 observations, fewer than 7 ' +
-  'days of history, or a fit that explains under 30 percent of the variation; medium ' +
-  'with fewer than 30 observations or a fit under 60 percent; high otherwise. An ' +
-  'estimate is produced only with at least 7 observations on at least 5 different ' +
-  'dates covering at least 7 days of one crop at one market in one unit.';
+  'The range around it is the estimate plus or minus 1.28 times the standard error ' +
+  'of the fit, which is the typical day-to-day spread of the observed prices ' +
+  'around that line. It shows how much the observed prices normally moved around ' +
+  'the line, and it is not a calibrated prediction interval: it does not include ' +
+  'the uncertainty of the fitted line itself, and it does not widen with the ' +
+  'distance the line is read beyond the last observation, so it is a rough guide ' +
+  'rather than a bound. The lower end is never allowed below zero, because a ' +
+  'price cannot be negative. The evidence label is low with fewer than 14 ' +
+  'observations, fewer than 7 days of history, or a fit that explains under 30 ' +
+  'percent of the variation; medium with fewer than 30 observations or a fit under ' +
+  '60 percent; high otherwise. The label describes how much and how good the ' +
+  'evidence is, not how certain the estimate is. An estimate is produced only ' +
+  'with at least 7 observations on at least 5 different dates covering at least 7 ' +
+  'days of one crop at one market in one unit.';
 
 /** The scope of the series a forecast is calculated from. */
 export type ForecastScope = {

@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  FORECAST_METHOD,
   FORECAST_HORIZON_DAYS,
   FORECAST_MIN_COVERAGE_DAYS,
   FORECAST_MIN_DISTINCT_DATES,
@@ -202,7 +203,18 @@ test('the estimate is never presented as an observed price', () => {
 
   assert.equal(result.isObserved, false);
   assert.match(result.method, /straight line/i);
-  assert.match(result.method, /not a guarantee/i);
+  assert.match(result.method, /not a calibrated prediction interval/i);
+  assert.match(result.method, /rather than a bound/i);
+});
+
+test('the method never overstates what the range around the estimate establishes', () => {
+  // The band is a standard-error band around a fitted line. Calling it a
+  // calibrated prediction interval, a probability, or a guarantee would
+  // promise more than the calculation can support (Phase 9 review).
+  assert.doesNotMatch(FORECAST_METHOD, /guarantee/i);
+  assert.doesNotMatch(FORECAST_METHOD, /80 percent band/i);
+  assert.doesNotMatch(FORECAST_METHOD, /confidence/i);
+  assert.match(FORECAST_METHOD, /does not widen/i);
 });
 
 test('the demo status is carried through so seeded data is never shown as live', () => {

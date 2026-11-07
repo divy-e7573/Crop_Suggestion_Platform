@@ -62,10 +62,10 @@ test('the trend label always names the direction in words', () => {
   assert.equal(trendLabel('insufficient_data'), 'Not enough data');
 });
 
-test('the quality label names the confidence in the estimate', () => {
-  assert.equal(qualityLabel('high'), 'High confidence');
-  assert.equal(qualityLabel('medium'), 'Medium confidence');
-  assert.equal(qualityLabel('low'), 'Low confidence');
+test('the quality label names the evidence, not the certainty of the outcome', () => {
+  assert.equal(qualityLabel('high'), 'Good evidence');
+  assert.equal(qualityLabel('medium'), 'Fair evidence');
+  assert.equal(qualityLabel('low'), 'Weak evidence');
   assert.equal(qualityLabel(null), 'No estimate');
 });
 

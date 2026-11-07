@@ -39,6 +39,20 @@ export function jsonError(
 }
 
 /**
+ * Marks a response as private.
+ *
+ * A saved farmer profile is personal data, so it must not be kept by a
+ * shared cache, a service worker, or the browser's own cache. The header
+ * is set on the profile responses rather than on every response, because
+ * the public price and catalogue endpoints are safe to cache
+ * (AGENTS.md section 5, Phase 9 privacy review).
+ */
+export function noStore(response: Response): Response {
+  response.headers.set('Cache-Control', 'no-store');
+  return response;
+}
+
+/**
  * Maps any thrown value onto a safe HTTP response.
  *
  * A known `ApiError` keeps its status and message. Anything else becomes a

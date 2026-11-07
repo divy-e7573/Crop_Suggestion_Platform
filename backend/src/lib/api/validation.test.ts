@@ -99,3 +99,23 @@ test('parseJsonBody parses valid JSON and maps failures to 400', async () => {
     (error: unknown) => error instanceof ValidationError && error.details?.[0]?.code === 'too_big',
   );
 });
+
+test('parseJsonBody measures the body again when no length was declared', async () => {
+  const schema = z.object({ name: z.string().min(1) });
+
+  // A request with a streamed body carries no content-length header, so
+  // the size can only be checked once the body has been read.
+  const oversized = 'x'.repeat(64 * 1024 + 10);
+
+  await assert.rejects(
+    () =>
+      parseJsonBody(
+        schema,
+        new Request('http://localhost/api', {
+          method: 'POST',
+          body: JSON.stringify({ name: oversized }),
+        }),
+      ),
+    (error: unknown) => error instanceof ValidationError && error.details?.[0]?.code === 'too_big',
+  );
+});

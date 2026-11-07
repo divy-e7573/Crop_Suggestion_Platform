@@ -118,16 +118,14 @@ function fakeProvider(options: FakeProviderOptions = {}): MandiPriceProvider {
     sourceUrl: null,
     attribution: 'Demonstration records.',
 
-    async listObservations(
-      _query: ProviderQuery,
-    ): Promise<ProviderResult<ProviderObservation>> {
+    async listObservations(): Promise<ProviderResult<ProviderObservation>> {
       if (options.fails) {
         throw new ProviderUnavailableError('The mandi data provider is currently unavailable.');
       }
       return { items: observations, total: observations.length, truncated: false };
     },
 
-    async listMarkets(_query: ProviderQuery): Promise<ProviderResult<ProviderMarket>> {
+    async listMarkets(): Promise<ProviderResult<ProviderMarket>> {
       return { items: [], total: 0, truncated: false };
     },
   };

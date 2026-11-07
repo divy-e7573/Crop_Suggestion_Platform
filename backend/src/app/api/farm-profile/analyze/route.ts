@@ -1,9 +1,13 @@
 import { connection } from 'next/server';
 
-import { jsonOk, toErrorResponse } from '@/lib/api/response';
+import { jsonOk, noStore, toErrorResponse } from '@/lib/api/response';
 import { parseJsonBody } from '@/lib/api/validation';
 import { createFarmProfile } from '@/lib/db/repositories';
 import { getMandiProvider } from '@/lib/providers/registry';
+import {
+  createAnalysisToken,
+  hashAnalysisToken,
+} from '@/lib/services/analysisToken';
 import { createAiNarrativeProvider } from '@/lib/services/aiNarrativeProvider';
 import {
   farmProfileSchema,
@@ -40,6 +44,12 @@ export async function POST(request: Request): Promise<Response> {
     const input = await parseJsonBody(farmProfileSchema, request);
     const provider = getMandiProvider();
 
+    // The access token that authorises reading this profile back later.
+    // The raw token is returned once, to this caller; only its hash is
+    // stored (Phase 9 privacy review).
+    const analysisToken = createAnalysisToken();
+    const tokenHash = hashAnalysisToken(analysisToken);
+
     let matching;
     let marketDataUnavailable: string | null = null;
 
@@ -70,6 +80,7 @@ export async function POST(request: Request): Promise<Response> {
       matchingObservations: matching.priceObservations,
       matchingMarkets: matching.markets,
       matchingIsComplete: matching.isComplete,
+      analysisTokenHash: tokenHash,
     });
 
     const analysis = await computeProfileAnalysis({
@@ -94,6 +105,7 @@ export async function POST(request: Request): Promise<Response> {
 
     const body: FarmProfileAnalysisDto = {
       profileId: stored.id,
+      analysisToken: analysisToken,
       savedAt: stored.createdAt.toISOString(),
       profile: {
         id: stored.id,
@@ -121,7 +133,9 @@ export async function POST(request: Request): Promise<Response> {
         'Nothing here is a promise about yield, price, or profit.',
     };
 
-    return jsonOk(body, 201);
+    // The response carries a farmer's own details and their access token,
+    // so it must not be kept by a shared cache.
+    return noStore(jsonOk(body, 201));
   } catch (error) {
     return toErrorResponse(error);
   }

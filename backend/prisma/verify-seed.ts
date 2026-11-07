@@ -21,6 +21,7 @@ const { prisma } = await import('../src/lib/db/client.ts');
 const {
   countFarmProfiles,
   findLatestFarmProfile,
+  findFarmProfileByTokenHash,
   getPriceHistory,
   listCropSuitabilityRules,
   listMarketRecords,
@@ -202,6 +203,64 @@ async function main() {
     'findLatestFarmProfile returns the newest profile',
     String(latest?.id),
   );
+
+  console.log('\n--- farmer profile access tokens (Phase 9) ---');
+
+  // The Phase 9 privacy review removed the global "latest profile" route
+  // and replaced it with a per-profile capability token. These checks
+  // prove, against the real table, that only a hash is stored, that the
+  // hash is unique, and that the token itself is nowhere in the row.
+  check(
+    columnNames.includes('analysistokenhash'),
+    'the profile table carries the token hash column',
+    columnNames.join(','),
+  );
+
+  const tokenHashes = profileRows
+    .map((row) => row.analysisTokenHash)
+    .filter((value): value is string => typeof value === 'string' && value !== '');
+
+  check(
+    tokenHashes.every((hash) => /^[0-9a-f]{64}$/.test(hash)),
+    'every stored token hash is a SHA-256 hex digest',
+    String(tokenHashes.length),
+  );
+
+  check(
+    new Set(tokenHashes).size === tokenHashes.length,
+    'no two profiles share a token hash',
+    String(tokenHashes.length),
+  );
+
+  check(
+    tokenHashes.every((hash) => !/^[A-Za-z0-9_-]{43}$/.test(hash)),
+    'the raw access token is never stored',
+  );
+
+  // The row must not hold the token anywhere else either. Every string
+  // column of every profile is checked against the token shape.
+  const tokenShaped = /^[A-Za-z0-9_-]{43}$/;
+  const tokenInAnyColumn = profileRows.some((row) =>
+    Object.values(row).some(
+      (value) => typeof value === 'string' && tokenShaped.test(value),
+    ),
+  );
+  check(!tokenInAnyColumn, 'no profile column holds a raw access token');
+
+  const firstHash = tokenHashes[0];
+  if (firstHash) {
+    const found = await findFarmProfileByTokenHash(firstHash);
+    check(found !== null, 'a stored token hash finds its own profile');
+    check(
+      found?.analysisTokenHash === firstHash,
+      'the profile found by hash is the right one',
+    );
+  } else {
+    check(true, 'no stored token hash to look up (nothing saved yet)');
+  }
+
+  const unknown = await findFarmProfileByTokenHash('0'.repeat(64));
+  check(unknown === null, 'an unknown token hash finds nothing');
 
   console.log('\n--- crop suitability rules (Phase 8) ---');
   const rules = await listCropSuitabilityRules();

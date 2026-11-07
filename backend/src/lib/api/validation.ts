@@ -78,6 +78,20 @@ export async function parseJsonBody<T>(schema: z.ZodType<T>, request: Request): 
     throw new ValidationError('The request body could not be read.');
   }
 
+  // The declared length is only a hint: a chunked request has no
+  // content-length at all, so the body is measured again once it has been
+  // read. This keeps the size limit real for every request shape
+  // (AGENTS.md section 5, "safe request limits").
+  if (text.length > MAX_BODY_BYTES) {
+    throw new ValidationError('The request body is too large.', [
+      {
+        field: '(body)',
+        message: 'Keep the body under ' + MAX_BODY_BYTES + ' bytes.',
+        code: 'too_big',
+      },
+    ]);
+  }
+
   if (text.trim() === '') {
     throw new ValidationError('A JSON request body is required.', [
       { field: '(body)', message: 'Send a JSON object.', code: 'invalid_type' },

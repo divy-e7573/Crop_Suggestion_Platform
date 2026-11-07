@@ -434,6 +434,11 @@ export type FarmProfileRecord = {
   matchingObservations: number;
   matchingMarkets: number;
   matchingIsComplete: boolean;
+  /**
+   * Hash of the access token that authorises reading this profile back.
+   * Only the hash is stored (Phase 9 privacy review).
+   */
+  analysisTokenHash?: string | null;
 };
 
 /** Stores one validated farmer profile. */
@@ -454,6 +459,7 @@ export async function createFarmProfile(record: FarmProfileRecord) {
       matchingObservations: record.matchingObservations,
       matchingMarkets: record.matchingMarkets,
       matchingIsComplete: record.matchingIsComplete,
+      analysisTokenHash: record.analysisTokenHash ?? null,
     },
   });
 }
@@ -466,6 +472,18 @@ export async function countFarmProfiles(): Promise<number> {
 /** Reads the most recently stored profile, used by the verification script. */
 export async function findLatestFarmProfile() {
   return prisma.farmProfile.findFirst({ orderBy: { createdAt: 'desc' } });
+}
+
+/**
+ * Reads the profile that an access token belongs to.
+ *
+ * The token is hashed first and the hash is looked up, so the raw token is
+ * never used as a query value and never reaches the database. A profile
+ * without a token (a row created before the token column existed) simply
+ * cannot be found this way, which is the safe outcome.
+ */
+export async function findFarmProfileByTokenHash(analysisTokenHash: string) {
+  return prisma.farmProfile.findUnique({ where: { analysisTokenHash } });
 }
 
 /**

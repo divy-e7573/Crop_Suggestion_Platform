@@ -2,21 +2,25 @@ import { ProfileAnalysisView } from '../components/analysis/ProfileAnalysisView'
 import { LinkButton } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { StateMessage } from '../components/ui/StateMessage';
-import { useLatestAnalysis } from '../lib/useLatestAnalysis';
+import { useSavedAnalysis } from '../lib/useSavedAnalysis';
 import styles from './pages.module.css';
 
 /**
  * The crop suggestions page.
  *
- * It shows the analysis of the profile that was saved most recently, worked
- * out by the backend rule engine. Nothing on this page is a hardcoded
- * sample: if no profile has been saved, or the backend cannot be reached,
- * the page says so and offers a way to fix it (PRD FR-06, FR-07).
+ * It shows the analysis of the profile this browser saved, worked out by
+ * the backend rule engine. Nothing on this page is a hardcoded sample: if
+ * this browser has no saved profile, or the backend cannot be reached, the
+ * page says so and offers a way to fix it (PRD FR-06, FR-07).
+ *
+ * The analysis is read with the access token that was handed out when the
+ * profile was saved, so no farmer's details are shown to another visitor
+ * (Phase 9 privacy review).
  */
 export function CropSuggestionsPage() {
-  const { data, error, loading, retry } = useLatestAnalysis();
+  const { data, error, hasNoProfile, loading, retry } = useSavedAnalysis();
 
-  const hasProfile = data !== null && data.profileId !== null;
+  const hasProfile = data !== null;
 
   return (
     <div className={styles.stack}>
@@ -50,20 +54,28 @@ export function CropSuggestionsPage() {
           />
         ) : null}
 
-        {!loading && !error && data !== null && !hasProfile ? (
+        {!loading && !error && hasNoProfile ? (
           <StateMessage
             kind="empty"
             title="No farm profile saved yet"
             detail={
-              data.analysis.message +
-              ' Save your profile and the suggestions, the price trend, and the selling ' +
-              'guidance will be worked out from it.'
+              'This browser has no farm profile that this page can read. Save your ' +
+              'profile and the suggestions, the price trend, and the selling guidance ' +
+              'will be worked out from it.'
             }
           />
         ) : null}
 
         {!loading && !error && hasProfile ? (
           <>
+            {/*
+              A polite live region, so a screen reader says that the
+              suggestions are ready once they arrive. The content itself is
+              read normally; only this short sentence is announced.
+            */}
+            <p className="visually-hidden" role="status">
+              Your saved crop suggestions and selling insights are ready.
+            </p>
             {data.profile ? (
               <p className={styles.selection}>
                 Based on your saved profile: {data.profile.district}, {data.profile.state}{' '}

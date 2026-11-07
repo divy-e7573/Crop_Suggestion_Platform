@@ -22,7 +22,7 @@ export function ProfileAnalysisView({ analysis }: ProfileAnalysisViewProps) {
       <p className={styles.message}>{analysis.message}</p>
 
       <section className={styles.section}>
-        <h4 className={styles.sectionTitle}>Suggested crops for your farm</h4>
+        <h3 className={styles.sectionTitle}>Suggested crops for your farm</h3>
         {analysis.cropSuggestions ? (
           <CropSuggestionList suggestions={analysis.cropSuggestions} />
         ) : (
@@ -35,7 +35,7 @@ export function ProfileAnalysisView({ analysis }: ProfileAnalysisViewProps) {
       </section>
 
       <section className={styles.section}>
-        <h4 className={styles.sectionTitle}>Mandi prices and selling period</h4>
+        <h3 className={styles.sectionTitle}>Mandi prices and selling period</h3>
         {analysis.sellingInsights ? (
           <PriceInsightPanel insights={analysis.sellingInsights} />
         ) : (

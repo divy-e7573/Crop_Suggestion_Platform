@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 
 import { ApiRequestError } from '../../lib/apiClient';
+import { clearAnalysisToken, writeAnalysisToken } from '../../lib/analysisTokenStorage';
 import {
   postFarmProfile,
   type FarmProfileAnalysisDto,
@@ -100,6 +101,10 @@ export function FarmProfileForm() {
 
     try {
       const response = await postFarmProfile(toFarmProfileRequest(values));
+      // The access token is handed out once, here. It is kept in session
+      // storage so the crop suggestions page can read this profile back
+      // without exposing it to another browser (Phase 9 privacy review).
+      writeAnalysisToken(response.analysisToken);
       setResult(response);
       setStatus('success');
       setErrors({});
@@ -135,6 +140,7 @@ export function FarmProfileForm() {
 
   /** Clears the form so a different farm can be entered. */
   function handleStartAgain() {
+    clearAnalysisToken();
     setValues({ ...EMPTY_FARM_PROFILE });
     setErrors({});
     setResult(null);

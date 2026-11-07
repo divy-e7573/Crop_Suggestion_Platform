@@ -9,6 +9,58 @@ insights.
 > not guaranteed outcomes. Verify local conditions and official market information
 > before making decisions.
 
+## The problem
+
+An Indian farmer deciding what to plant and when to sell works from whatever they
+are told: a trader's number, a rumour, or a visit to the market. Official mandi
+prices are published every day, but they are spread across hundreds of markets
+and are hard to read. Two practical questions follow from that:
+
+1. **Which crops suit my land this season?** The answer depends on the soil, the
+   season, the irrigation, and the size of the plot, and it is usually given by
+   opinion rather than by a rule.
+2. **Is now a good time to sell?** That needs the recent price history of *my*
+   crop at *my* market, which nobody has time to assemble by hand.
+
+## The solution
+
+A small web application that turns a short farm profile into an explanation:
+
+- the **mandi prices** for the crops, states, districts, and markets that were
+  actually recorded, each row labelled with its source and its freshness;
+- **crop suitability suggestions**, ranked by a documented rule set, where every
+  suggestion says which of the farmer's inputs matched and which were missing;
+- **selling-period insights**, built only from the prices that were really
+  observed, with an estimate shown only when there is enough history and an
+  honest "not enough data" when there is not.
+
+The guiding rule is that the app never invents a price. If the data source
+cannot be read, the app says so instead of showing something plausible.
+
+## Main features
+
+| Feature | What the farmer gets |
+| ------- | -------------------- |
+| Farmer profile | State, district, soil type, season, land area and unit, optional irrigation, optional current crop |
+| Mandi price dashboard | Filter by crop, state, district, market, and date; compare markets; see the price trend |
+| Crop suggestions | Ranked crops with the matched and missing criteria, and the crops that were left out with their reasons |
+| Selling-period insights | The observed direction, a baseline estimate with its evidence, and plain-language guidance |
+| Data-source status | Every screen says whether it is showing seeded demo records or live government data |
+| Next.js demonstrations | Server Component, SSG, and SSR pages that show the framework features the course asks for |
+
+## Technology stack
+
+| Layer | Choice | Why |
+| ----- | ------ | --- |
+| Frontend | React 19 + Vite + TypeScript | The product UI. Fast local server, small bundle, strict types |
+| Backend | Next.js 16 (App Router) + TypeScript | Route Handlers give the HTTP/JSON API; the same app demonstrates Server Components, SSG, and SSR |
+| Database | PostgreSQL 18 | Stores the reference data, the demo records, and the saved farmer profiles |
+| ORM | Prisma 7 | Typed models, versioned migrations, and a generated client that never leaves the backend |
+| Validation | Zod 4 | One schema per request, on the server, so the browser is never trusted |
+| Charts | uPlot 1.6 | About 50 kB with no dependencies, next to a charting framework that ships its own state manager |
+| Data source | data.gov.in | The official daily mandi price resource published by the Ministry of Agriculture |
+| Tests | `node --test` | No extra test framework; the plain Node runner is used on both sides |
+
 ## Architecture
 
 This is a monorepo containing **two independently runnable applications**:
@@ -69,8 +121,6 @@ MANDI_DATA_PROVIDER_MODE=demo
 MANDI_PROVIDER_API_KEY=
 AI_API_KEY=
 AI_MODEL=
-AI_BASE_URL=https://api.openai.com/v1
-AI_ENABLE_NARRATIVE=true
 FARM_PROFILE_RETENTION_DAYS=90
 ```
 
@@ -78,8 +128,9 @@ FARM_PROFILE_RETENTION_DAYS=90
 `MANDI_DATA_PROVIDER_MODE` selects the price data source (see
 [Mandi data providers](#mandi-data-providers)). `AI_API_KEY`, `AI_MODEL`,
 `AI_BASE_URL`, and `AI_ENABLE_NARRATIVE` control the optional server-side
-narrative. The app needs none of them: its deterministic explanations work
-without an AI key.
+narrative; the last two are commented out in `.env.example` because their
+defaults are already correct. The app needs none of them: its deterministic
+explanations work without an AI key.
 `FARM_PROFILE_RETENTION_DAYS` sets how long a saved farmer profile is kept
 (see [Privacy and retention](#privacy-and-retention)).
 
@@ -213,6 +264,62 @@ curl http://localhost:3000/api/health
 `notConnected` list is intentional: this lightweight endpoint does not test
 the database, the mandi provider, or the optional AI provider. The list means
 "not checked by this request", not "not integrated".
+
+## Demonstration workflow
+
+This is the sequence to follow in a college demonstration. It works entirely
+with the **seeded demo data**, so it does not need an internet connection, a
+provider key, or a live market feed.
+
+**Before you start**
+
+1. `npm install`
+2. Copy `backend/.env.example` to `backend/.env.local`, put your own
+   `DATABASE_URL` in it, and leave `MANDI_DATA_PROVIDER_MODE=demo`.
+3. `npm run db:deploy` then `npm run db:seed`
+4. `npm run dev:backend` in one terminal and `npm run dev:frontend` in
+   another.
+
+**The walkthrough**
+
+| # | Do this | What to say |
+| - | ------- | ----------- |
+| 1 | Open `http://localhost:5173` | "This is the React app; the Next.js service behind it holds the data." |
+| 2 | Read the strip at the top of the dashboard | It says **Demo data** and names the seeded source. Every later screen carries the same badge. |
+| 3 | Open **Mandi Prices** | 252 seeded observations, each with its market, day, unit, and source. |
+| 4 | Type `Wheat`, choose **Punjab**, then a district, then a market | The filters cascade: a market only appears when it belongs to the chosen district, and the market list is never filtered by the state it is built from. |
+| 5 | Look at the price trend and the market comparison | Seven real seeded days for that crop at that market. The chart also has a table alternative for screen readers. |
+| 6 | Back to **Dashboard**, fill the profile form (Maharashtra, Nashik, black soil, kharif, 2 acres, drip) and save | The form is validated in the browser and again on the server. The saved summary appears with the data-source badge. |
+| 7 | Open **Crop Suggestions** | The ranked crops with the rule that matched, the criteria that were missing, and the crops that were left out with their reasons. |
+| 8 | Scroll to the price insight panel | The observed direction, then the estimate: **not enough data** or a number with its evidence period, its unit, and a weak/fair/good evidence label. |
+| 9 | Open **Data Sources & About** | The provider, its attribution, the demo-versus-live rule, and the limits of the live feed. |
+| 10 | Open `http://localhost:3000/rendering/ssg` and then `/rendering/ssr` | Two separate Next.js demonstrations: the SSG page is byte-identical on every request, the SSR page changes on every request. |
+
+**The honest answer to "why is the estimate sometimes missing?"**
+
+The forecast needs at least 7 observations on at least 5 different dates
+covering at least 7 calendar days, of one crop at one market in one unit. The
+seeded demo series has exactly 7 days, so it clears the rule and produces an
+estimate labelled **weak evidence**. The live data.gov.in feed publishes only
+the current day for a given market, so a live series usually holds a single
+observation, does not clear the rule, and the app shows **not enough data**
+instead of a number. That is the correct behaviour, and it is worth
+demonstrating on purpose: change `MANDI_DATA_PROVIDER_MODE` to `live` and
+show that the estimate disappears rather than being invented.
+
+**Sample profile to type in**
+
+| Field | Value |
+| ----- | ----- |
+| State | `Maharashtra` |
+| District | `Nashik` |
+| Village or PIN code | `Pimpalgaon` (optional, any value) |
+| Soil type | `BLACK` |
+| Season | `KHARIF` |
+| Irrigation | `DRIP` (optional) |
+| Current or intended crop | `Soybean` (optional) |
+| Land area | `2.5` |
+| Land area unit | `ACRE` |
 
 ## Mandi price dashboard
 
@@ -364,11 +471,17 @@ the reason and **no number at all**.
 
 When they do, the estimate is a straight line fitted by least squares and read
 7 days beyond the last observation. The range around it is the estimate plus
-or minus 1.28 times the standard error of the fit, which is an approximate 80
-percent band of the past spread and not a guarantee. The data-quality label
-is `low` with fewer than 14 observations, fewer than 7 days of history, or a
-fit that explains under 30 percent of the variation; `medium` with fewer than
-30 observations or a fit under 60 percent; `high` otherwise.
+or minus 1.28 times the standard error of the fit. That range shows how far
+the observed prices normally sat from the fitted line. It is **not** a
+calibrated prediction interval: it leaves out the uncertainty of the fitted
+line itself, and it does not widen the further the line is read beyond the
+last observation, so it is a rough guide rather than a bound. The
+data-quality label is `low` with fewer than 14 observations, fewer than 7
+days of history, or a fit that explains under 30 percent of the variation;
+`medium` with fewer than 30 observations or a fit under 60 percent; `high`
+otherwise. The label describes how much and how good the evidence is, not how
+certain the estimate is, and the UI words it as `Good evidence`, `Fair
+evidence`, or `Weak evidence` for that reason.
 
 The seeded demo series (7 days) clears the threshold and is labelled `low`
 quality. The live provider usually returns a single observation for a market,
@@ -503,6 +616,7 @@ requests, not assumptions:
 | `GET`  | `/api/markets`       | Markets and their latest available price                  |
 | `GET`  | `/api/data-sources`  | Which provider is configured, and whether it answered      |
 | `POST` | `/api/farm-profile/analyze` | Validate and store a farmer profile              |
+| `GET`  | `/api/farm-profile/analysis` | Read one saved profile back (needs `X-Analysis-Token`) |
 
 ### `GET /api/mandi-prices`
 
@@ -783,17 +897,39 @@ caused it:
 }
 ```
 
-### `GET /api/farm-profile/latest`
+### `GET /api/farm-profile/analysis`
 
-Returns the analysis of the profile that was saved most recently, recomputed
-from the current data. The crop-suggestions page uses it, so the page still
-works after a reload.
+Reads one saved profile back and recomputes its analysis from the current
+data, so a stale price is never shown as if it were current. The
+crop-suggestions page uses it, so the page still works after a reload.
 
-The response is `200` with `profileId: null` and an explanation when no
-profile has been saved yet.
+The caller must present the access token that was handed out when the profile
+was created, in the `X-Analysis-Token` request header:
+
+```bash
+curl http://localhost:3000/api/farm-profile/analysis \
+  -H "X-Analysis-Token: THE_TOKEN_FROM_THE_POST_RESPONSE"
+```
+
+| Case                        | Status | Body                                              |
+| --------------------------- | ------ | ------------------------------------------------- |
+| The token matches a profile | `200`  | `{ success: true, data: { profileId, savedAt, profile, analysis } }` |
+| The token is missing or malformed | `400` | `VALIDATION_ERROR` naming the `x-analysis-token` field |
+| The token is well formed but unknown | `404` | `NOT_FOUND`      |
 
 The optional village or PIN detail is deliberately **not** repeated in this
 response. The analysis does not use it and the page does not need it.
+
+The response is sent with `Cache-Control: no-store`, so a shared cache or a
+browser cache cannot keep a farmer's details.
+
+> **There is no "give me the latest profile" endpoint any more.** An earlier
+> build had `GET /api/farm-profile/latest`, which returned the most recently
+> saved profile to anybody who asked. On a shared or deployed backend that
+> would have shown one farmer's state, district, soil type, and land area to
+> every other visitor. CORS is not authentication, so the route was replaced
+> by the per-profile access token described above. See
+> [Privacy and retention](#privacy-and-retention).
 
 ## Privacy and retention
 
@@ -814,6 +950,24 @@ The profile form collects only what the product needs:
   ```
 
   The script never deletes anything without `--confirm`.
+
+- **One browser cannot read another farmer's profile.** When a profile is
+  saved, the API hands back one unguessable **access token** (43 random
+  characters) and stores only its SHA-256 hash. The browser keeps the token
+  in **session storage**, so it belongs to one tab and disappears when the
+  tab is closed. Reading the profile back needs that token in the
+  `X-Analysis-Token` header. A copy of the database therefore cannot be
+  turned back into a working token, and there is no route that returns
+  "the most recent profile" to whoever asks.
+
+  There is still **no account system**. The token is a capability for one
+  profile, not a login: it cannot be used for anything else, it is not
+  transferable, and it grants no access to any other farmer's data. If the
+  farmer clears the browser data or closes the tab, the analysis has to be
+  produced again by saving the profile again.
+
+- **The profile responses are not cached.** They carry
+  `Cache-Control: no-store`, so no shared cache keeps a farmer's details.
 
 ## Commands
 
@@ -836,9 +990,28 @@ Run from the repository root:
 | `npm run db:verify`      | Query the database and check demo labelling    |
 | `npm run db:prune-profiles` | Remove profiles older than the retention window |
 
+Two more root scripts are useful for a demo on a built app:
+
+| Command                  | Description                                     |
+| ------------------------ | ----------------------------------------------- |
+| `npm run build` then `npm run start:backend` | Serve the built Next.js app on port 3000 |
+| `npm run build` then `npm run preview:frontend` | Serve the built React app on port 5173 |
+
 Per-app commands are also available with `npm run <script> --workspace frontend`
 or `--workspace backend`. Each app defines `dev`, `build`, `lint`, `typecheck`,
 and (backend) `start`.
+
+### Troubleshooting
+
+| Symptom | Cause and fix |
+| ------- | ------------- |
+| `npm` is not recognised in PowerShell | Use `npm.cmd` instead of `npm`, or run the commands from `cmd.exe`. |
+| The browser shows "The backend could not be reached" | The Next.js server is not running, or `VITE_API_BASE_URL` points somewhere else. Check `http://localhost:3000/api/health`. |
+| The browser shows `403 Forbidden` on every API call | `CORS_ALLOWED_ORIGINS` does not list the origin the browser is using. It must be the full origin, for example `http://localhost:5173`, with no path. |
+| `npm run db:seed` fails with a connection error | `DATABASE_URL` is wrong, or PostgreSQL is not running. Check `pg_isready`. |
+| The prices all show `Demo data` | `MANDI_DATA_PROVIDER_MODE` is `demo`, which is the default and needs no key. |
+| The live provider answers `503 PROVIDER_RATE_LIMITED` | The upstream throttles bursts. Wait a minute; the provider already retries with a backoff. |
+| The forecast shows "Not enough data to estimate" | The observations did not clear the documented threshold. This is correct behaviour, not a bug. |
 
 ## Project layout
 
@@ -849,11 +1022,12 @@ frontend/                 React + Vite + TypeScript UI
   src/lib/apiClient.ts    JSON envelope client used by the app
   src/lib/farmProfileValidation.ts  Shared form rules (no React, no imports)
   src/lib/farmProfileApi.ts Client for the farm-profile analysis endpoints
+  src/lib/analysisTokenStorage.ts  Session storage for the profile access token
   src/lib/analysisPresentation.ts Wording for scores, confidence, trends, quality
   src/lib/mandiApi.ts     Client for the price, market, crop, and history APIs
   src/lib/priceAnalytics.ts  Price summaries, market comparison, chart points
   src/lib/useMandiDashboard.ts  The dashboard state and its requests
-  src/lib/useLatestAnalysis.ts  Loads the analysis shown on the suggestions page
+  src/lib/useSavedAnalysis.ts  Loads the analysis shown on the suggestions page
   src/components/farm-profile/  The farmer profile form
   src/components/analysis/ The ranked suggestions and the selling insights
   src/components/dashboard/ The live data-status strip
@@ -869,7 +1043,7 @@ backend/                  Next.js App Router API service
   src/app/api/crops/      GET /api/crops route handler
   src/app/api/data-sources/ GET /api/data-sources route handler
   src/app/api/farm-profile/analyze/ POST /api/farm-profile/analyze route handler
-  src/app/api/farm-profile/latest/ GET /api/farm-profile/latest route handler
+  src/app/api/farm-profile/analysis/ GET /api/farm-profile/analysis route handler
   src/app/api/[...path]/  JSON 404 for unknown API paths
   src/lib/api/            Response envelope, errors, validation, CORS, env
   src/lib/db/             Prisma client, driver adapter, repositories
@@ -881,6 +1055,7 @@ backend/                  Next.js App Router API service
   src/lib/services/sellingInsightService.ts   The plain-language guidance
   src/lib/services/aiNarrativeProvider.ts     The optional AI wording
   src/lib/services/profileAnalysisService.ts  Puts the pieces together
+  src/lib/services/analysisToken.ts  The per-profile access token
   src/proxy.ts            CORS gate and preflight handling for /api/*
   prisma/schema.prisma    Database models and enums
   prisma/migrations/      Generated SQL migrations
@@ -890,7 +1065,7 @@ backend/                  Next.js App Router API service
   prisma/prune-profiles.ts Retention script (npm run db:prune-profiles)
   generated/prisma/       Generated client (git-ignored)
 package.json              npm workspaces root
-docs/                     (planned)
+ARCHITECTURE.md           Diagrams of the system and its data flows
 PRD.md  AGENTS.md  TRACER.md
 ```
 
@@ -908,15 +1083,59 @@ never presented as live or real-time, the live provider never substitutes demo
 rows when the upstream fails, and forecasts are only returned when a documented
 minimum-data rule is met (`insufficient_data` otherwise).
 
+## Known limitations
+
+These are real and are not worked around anywhere in the code.
+
+- **The live feed rarely has enough history.** The data.gov.in resource has no
+  usable date filter and caps every response at 10 records, so a live series
+  usually holds a single observation. The trend and the forecast therefore
+  report `insufficient_data` in live mode. The threshold was not lowered to
+  make live data qualify.
+- **The seeded data is seven days long.** It clears the forecast threshold
+  exactly, and the result is labelled **weak evidence** for that reason.
+- **The crop rules are demonstration rules.** They are seeded, they are
+  labelled `DEMO` in the API and in the UI, and they are not validated
+  agronomic research findings.
+- **A market outside the farmer's district may be used.** It happens when the
+  farmer's own district has no observations. A caveat then names the market
+  and the district that were used.
+- **The optional AI narrative has never run against a real provider.** No key
+  is configured in this repository, and none is needed. What is verified is
+  everything around it: the sanitiser, the disabled-without-a-key path, the
+  failure paths, and the fact that no structured value can be overridden by
+  text.
+- **There is no account system.** A saved profile is read back with a
+  per-profile access token held in one browser tab. Clearing the browser data
+  or closing the tab means the analysis has to be produced again by saving
+  the profile again. This is deliberate: the PRD does not ask for accounts,
+  and adding them would mean collecting more personal data than the product
+  needs.
+- **The band around the forecast is not a prediction interval.** It is a
+  standard-error band around a fitted line. It leaves out the uncertainty of
+  the fitted line and does not widen with the distance the line is read
+  beyond the last observation.
+- **Distances are not shown.** No source in this project publishes verified
+  coordinates, so the market list is called *relevant markets*, not *nearby
+  markets*.
+- **The seeded prices are not real prices.** They are deterministic
+  demonstration records, and every screen that shows one says so.
+- **The Next.js pages are demonstrations.** `/`, `/rendering/ssg`, and
+  `/rendering/ssr` show no market data. The product UI is the React app.
+
 ## Current status
 
-Phases 1 (scaffold), 2 (UI foundation), 3 (API foundation), 4 (database), 5
-(mandi provider and prices API), 6 (farmer profile form), 7 (mandi price
-dashboard), and 8 (crop suitability and selling-period insights) are
-complete.
+Phases 0 to 10 are complete: the scaffold, the UI foundation, the API
+foundation, the database, the mandi provider and prices API, the farmer
+profile form, the mandi price dashboard, the crop suitability and
+selling-period insights, the integration and security audit, and the final
+documentation pass.
 
-The farmer profile now produces a ranked crop shortlist, an observed price
-trend, and a baseline estimate that is only shown when the observations clear
-the documented threshold. Phase 9 (integration, security, and accessibility
-checks) and Phase 10 (final polish and documentation) are still to come. See
-`TRACER.md` for progress and `PRD.md` for requirements.
+The farmer profile produces a ranked crop shortlist, an observed price trend,
+and a baseline estimate that is only shown when the observations clear the
+documented threshold. A saved profile can only be read back with the access
+token that was handed out when it was saved, so one farmer's details are
+never shown to another visitor.
+
+See `TRACER.md` for the phase-by-phase record and the checks that were run,
+`ARCHITECTURE.md` for the diagrams, and `PRD.md` for the requirements.

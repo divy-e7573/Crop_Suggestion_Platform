@@ -305,29 +305,171 @@
 
 ## Phase 9 — Integration, Security, Accessibility, and Quality Checks
 
-- [ ] Test the full path from farmer inputs through Next.js, data/services, database, and back to the UI.
-- [ ] Add/complete unit tests for validation, crop rules, forecast eligibility/calculation, and provider mapping.
-- [ ] Verify all API inputs are validated server-side.
-- [ ] Verify no secret is exposed in client bundles, responses, screenshots, or committed files.
-- [ ] Verify CORS is constrained to configured origins.
-- [ ] Verify the UI is keyboard-operable and basic accessibility checks pass.
-- [ ] Run available lint, type-check, tests, and production builds for both apps.
-- [ ] Fix regressions caused by the work or document remaining blockers accurately.
+- [x] Test the full path from farmer inputs through Next.js, data/services, database, and back to the UI.
+- [x] Add/complete unit tests for validation, crop rules, forecast eligibility/calculation, and provider mapping.
+- [x] Verify all API inputs are validated server-side.
+- [x] Verify no secret is exposed in client bundles, responses, screenshots, or committed files.
+- [x] Verify CORS is constrained to configured origins.
+- [x] Verify the UI is keyboard-operable and basic accessibility checks pass.
+- [x] Run available lint, type-check, tests, and production builds for both apps.
+- [x] Fix regressions caused by the work or document remaining blockers accurately.
 
-**Verification / notes:** _Add commands, results, and decisions here._
+**Verification / notes:** _Phase 9 completed 2026-11-07. 8 of 8 complete. The audit found one real privacy hole, one overstated statistical claim, two accessibility defects, and one request-limit gap. All five were fixed and every fix was re-verified._
+
+### The privacy hole that was found and fixed
+
+**`GET /api/farm-profile/latest` returned the most recently saved farmer profile to anybody who asked.** A profile holds the state, district, soil type, season, land area, and optionally a village or PIN code. On a shared or deployed backend, one farmer's details could be read by every other visitor. CORS is not authentication: it only tells a browser whether it may read a response, and it says nothing about who the caller is.
+
+The fix is a **capability token**, with no accounts and no login, because the PRD does not ask for accounts and AGENTS.md section 2 rules them out of scope:
+
+- `backend/src/lib/services/analysisToken.ts` builds a 32-byte random token (43 base64url characters) and its SHA-256 hash. Only the hash is ever stored, so a copy of the database cannot be turned back into a working token.
+- `backend/prisma/schema.prisma` gained `FarmProfile.analysisTokenHash String? @unique`, with the migration `20261107120000_add_farm_profile_analysis_token`. It was applied with `npm run db:deploy` ("All migrations have been successfully applied") and the column was confirmed through `information_schema`.
+- `POST /api/farm-profile/analyze` returns the raw token once, in the response body, and stores the hash.
+- `GET /api/farm-profile/analysis` replaces the old route. It needs the token in the `X-Analysis-Token` header: a missing or malformed token is a `400 VALIDATION_ERROR` that names the field, an unknown token is a `404 NOT_FOUND`, and a valid token returns the profile and its recomputed analysis. The village and PIN detail is still not repeated.
+- The frontend keeps the token in **session storage** (`frontend/src/lib/analysisTokenStorage.ts`), so it belongs to one tab and disappears when the tab closes. `useSavedAnalysis.ts` replaces `useLatestAnalysis.ts` and makes no request at all when there is no token.
+- Both profile responses now carry `Cache-Control: no-store`, so no shared cache keeps a farmer's details.
+- `X-Analysis-Token` was added to the CORS allow-list of request headers.
+
+The demo workflow was not broken: the form still saves, the suggestions page still works after a reload, and the analysis is still recomputed from the current data on every read.
+
+### The statistical claim that was overstated
+
+The forecast range was described as "an approximate 80 percent band of the past spread and not a guarantee", and the UI labelled the data quality "High confidence" / "Medium confidence" / "Low confidence". Both overstate what a standard-error band around a fitted line can establish: the band leaves out the uncertainty of the fitted line itself and does not widen with the distance the line is read beyond the last observation.
+
+The forecast method string now says so explicitly ("it is not a calibrated prediction interval: it does not include the uncertainty of the fitted line itself, and it does not widen with the distance the line is read beyond the last observation, so it is a rough guide rather than a bound"), and the UI words the label as **Good evidence** / **Fair evidence** / **Weak evidence**, so it describes the evidence rather than the certainty of the outcome. The threshold itself was not touched: no estimate is produced from fewer observations than before.
+
+### The accessibility defects that were found and fixed
+
+- **The section headings of the analysis panels skipped a level.** They were `h4` inside an `h2` card, so a screen reader jumped from level 2 to level 4. They are now `h3`.
+- **The crop-suggestions page announced nothing when the result arrived.** A visually hidden `role="status"` region now announces that the suggestions and the selling insights are ready.
+
+The heading order, the landmarks, the labels, the accessible names, the table captions and header scopes, the chart's text alternative, and the focus ring were then checked with a headless-Chrome run at 375, 768, and 1280 px. The focus ring is only applied by the browser after real keyboard input, so the harness sends real Tab and Enter key presses through the DevTools Protocol rather than calling `element.focus()`.
+
+### The request-limit gap that was closed
+
+`parseJsonBody` refused a body larger than 64 kB only when the request declared a `content-length`. A chunked request declares none, so the size was never checked. The body is now measured again once it has been read, and a unit test covers the streamed case.
+
+### Checks actually run, all exit code 0
+
+- `npm run test` -> **207 passed / 0 failed** (180 backend, 27 frontend), up from 199 at the end of Phase 8. The new backend tests cover the token's shape, its uniqueness over 200 draws, that the hash is stable and is not the token, that the hash of two different tokens never collides, that 8 malformed tokens are rejected before any database lookup, and that a body with no declared length is still size-checked. One existing forecast test was rewritten, because it asserted the old wording, and one new test asserts that the method never says "guarantee", "80 percent band", or "confidence".
+- `npm run db:verify` -> **57 PASS / 0 FAIL** against the live `krishi_mandi` database, up from 49. The 8 new checks prove that the token-hash column exists, that every stored hash is a SHA-256 hex digest, that no two profiles share a hash, that the raw 43-character token is never stored in any column of any profile row, that a stored hash finds its own profile, and that an unknown hash finds nothing.
+- `npm run typecheck` (both apps) and `npm run lint` (oxlint and ESLint) are clean, with **0 warnings**. Two pre-existing ESLint warnings about unused parameters in `profileAnalysisService.test.ts` were removed.
+- `npm run build` is clean. The route table shows `/api/farm-profile/analyze` and `/api/farm-profile/analysis` as dynamic, `/api/farm-profile/latest` is gone, `/`, `/_not-found`, and `/rendering/ssg` are static, and `/rendering/ssr` is dynamic. Vite emitted `dist/` at 373.64 kB JS / 122.88 kB gzip and 26.03 kB CSS.
+- **A 107-assertion HTTP run against the production build** (`next start`, the real database) returned **0 failures**. It covers the whole farmer flow, the ranked suggestions with their reasons, the excluded crops, the trend, the forecast with its metadata, the new wording ("not a calibrated prediction interval", "rather than a bound", and no "guarantee" and no "high confidence"), the token flow (201 with a token, 200 with the header, 400 without, 400 with a malformed token, 404 with an unknown token, and 404 for the removed `latest` route), the validation paths (invalid body, malformed JSON, empty body, oversized body, repeated query parameter, out-of-range limit, non-numeric limit, unsupported method), the CORS rules, the JSON 404, the SSG and SSR regression, and a scan proving no response contains a password, a connection string, or a key.
+- **CORS was checked in three extra server configurations**, each on its own port, so the production behaviour could be seen rather than assumed: with `CORS_ALLOWED_ORIGINS=http://localhost:9999`, the origin `http://localhost:5173` was refused with `403` and `http://localhost:9999` was granted; with the variable unset, `next start` still falls back to `http://localhost:5173` in development and refuses `http://evil.example.com` with `403`; with `CORS_ALLOWED_ORIGINS=not-an-origin`, **both** origins were refused with `403`, so an unusable configuration fails closed.
+- **An 88-assertion headless-Chrome run** against the production build served by `vite preview` passed with **0 failures**. It covers 375 / 768 / 1280 px: no horizontal overflow at any width, the empty state for a browser with no saved profile, the saved profile read back with its token, the profile still there after a reload, the insufficient-data state for a profile with no market data, a real profile submission through the form that stores the 43-character token in session storage, the landmarks and the single `h1`, the heading order, every form control labelled, every button and link named, a visible focus ring after real keyboard input, a live region on every width, the observations table with its caption and scoped header cells, the chart with an accessible name and its table alternative, the dashboard and the data-sources page, and **0 console errors and 0 warnings**.
+- **The SSG and SSR routes were checked directly.** `/rendering/ssg` returns byte-identical HTML on two requests and its visible HTML matches the on-disk `.next/server/app/rendering/ssg.html` artifact exactly (only the React Server Components flight-payload build id differs, which Next.js regenerates per build). `/rendering/ssr` returns different HTML on every request.
+- **The shipped bundle was scanned.** The 4 files in `frontend/dist` contain no password, no connection string, no provider key, no `DATABASE_URL`, and no `AI_API_KEY`. The only occurrence of the word "Prisma" is the visible sentence on the dashboard that says PostgreSQL with Prisma is in use.
+- `git status` shows only intended source changes. The root `.git` is still not writable from this environment, so nothing is staged or committed.
+
+### Known limits of this phase
+
+- **There is still no account system.** The token is a capability for one profile, not a login: it cannot be used for anything else, it is not transferable, and it grants no access to any other farmer's data. Clearing the browser data or closing the tab means the analysis has to be produced again by saving the profile again. This is documented in the README.
+- **A profile whose token no longer matches anything** (because the retention script removed it) is now shown as the empty state rather than as an error, so the page asks for the profile again instead of showing a failure the farmer cannot act on.
+- **`npm audit` could not be run.** The agent sandbox blocks the npm registry, so the advisory endpoint could not be reached ("audit endpoint returned an error"). The dependency tree was checked with `npm ls --workspaces --depth=0` instead: every declared package is used, and no package was added, removed, or upgraded in this phase. This is recorded honestly rather than reported as a clean audit.
+- **The AI narrative is still unverified against a real provider**, because no key is configured in this environment. What was re-checked by reading the code is that it stays disabled without a key, that it can only add wording, that its text is rejected when it contains a digit, and that no structured value can be overridden by it.
+- **The live provider path was not re-exercised in this phase**, because the outbound network is blocked here. The upstream behaviour was confirmed with real requests in Phase 5 and Phase 8 and has not changed.
 
 ## Phase 10 — Final Polish, Documentation, and Demo Readiness
 
-- [ ] Complete the README with prerequisites, setup, environment variables, database setup, seeds, run commands, tests, and troubleshooting.
-- [ ] Explain the architecture and data flow so the project can be presented to both React and Next.js instructors.
-- [ ] Document the API endpoints and example request/response shapes.
-- [ ] Document the active data provider, source attribution, freshness limits, and demo-data behavior.
-- [ ] Prepare sample demo inputs and a repeatable presentation workflow.
-- [ ] Confirm no misleading live-data, forecast-certainty, or profitability claims remain.
-- [ ] Run a clean setup/build smoke test as far as environment access allows.
-- [ ] Summarize completed features, test results, known limitations, and any follow-up work.
+- [x] Complete the README with prerequisites, setup, environment variables, database setup, seeds, run commands, tests, and troubleshooting.
+- [x] Explain the architecture and data flow so the project can be presented to both React and Next.js instructors.
+- [x] Document the API endpoints and example request/response shapes.
+- [x] Document the active data provider, source attribution, freshness limits, and demo-data behavior.
+- [x] Prepare sample demo inputs and a repeatable presentation workflow.
+- [x] Confirm no misleading live-data, forecast-certainty, or profitability claims remain.
+- [x] Run a clean setup/build smoke test as far as environment access allows.
+- [x] Summarize completed features, test results, known limitations, and any follow-up work.
 
-**Verification / notes:** _Add commands, results, and decisions here._
+**Verification / notes:** _Phase 10 completed 2026-11-07. 8 of 8 complete. The documentation was brought in line with the code as it stands after Phase 9, an architecture document with diagrams was added, a ten-step demo workflow was written, and a cleanup pass was made._
+
+### What the README now covers
+
+The README was rewritten rather than patched, so that it answers the twenty questions the phase asks in the order a reader meets them:
+
+| Topic | Where it is |
+| ----- | ----------- |
+| Project overview and problem statement | The opening, then **The problem** |
+| Proposed solution | **The solution** |
+| Main features | **Main features**, as a table |
+| Technology stack | **Technology stack**, with the reason for each choice |
+| Architecture | **Architecture**, and the new `ARCHITECTURE.md` |
+| Repository structure | **Project layout** |
+| Frontend and backend responsibilities | **Architecture**, and the table under it |
+| Database and Prisma setup | **Database (Prisma + PostgreSQL)**, unchanged and still accurate |
+| Environment variable configuration | **Environment configuration** |
+| Installation instructions | **Setup** |
+| Development commands | **Commands**, with a **Troubleshooting** table |
+| Database migration and seeding | **Database (Prisma + PostgreSQL)**, steps 1 to 5 |
+| Testing and build commands | **Commands** |
+| API endpoint overview | **API endpoints**, with one example response per route |
+| Data source information and attribution | **Mandi data providers** and **Verified upstream behaviour** |
+| Demo data versus live data | **Data honesty** and **Data source** in the endpoint list |
+| Crop suitability methodology | **Crop suggestions and selling insights** |
+| Trend and forecast methodology | **The observed trend** and **The forecast threshold** |
+| Known limitations | **Known limitations**, rewritten as a project-wide list |
+
+The forecast paragraph was corrected so it matches the new method string, the API endpoint table gained `GET /api/farm-profile/analysis`, the `GET /api/farm-profile/latest` section was replaced by the token-based route, the **Privacy and retention** section gained the access-token explanation, and the project layout no longer lists the deleted route or the renamed hook.
+
+### The architecture document
+
+`ARCHITECTURE.md` is new. It has **8 Mermaid diagrams**, one per section:
+
+1. the two applications and the layers between them,
+2. the farmer-profile request as a sequence diagram, end to end,
+3. the provider abstraction and the demo / live / unusable branches,
+4. the crop suitability flow, including the contradiction and the
+   missing-information branches,
+5. the trend and forecast flow, including the threshold,
+6. the Prisma model as an entity relationship diagram,
+7. the token flow that replaced the shared "latest profile" route,
+8. the SSG, SSR, and dynamic-route kinds.
+
+The diagrams are checked by a script that parses every `mermaid` block in the README, this document, and the TRACER: each block must declare a known diagram type, its brackets and quotes must balance, and every `subgraph` must have its matching `end`. **All 8 blocks pass.** This is a structural check, not a rendering check: no Mermaid renderer is available in this offline environment, so the diagrams have not been rendered.
+
+### The demo workflow
+
+The README now has a **Demonstration workflow** section: the four setup commands, a ten-step table of what to do and what to say, a sample profile to type in, and the honest answer to "why is the estimate sometimes missing?". It runs entirely on the seeded demo data, so it needs no internet connection and no provider key. It ends by pointing at the change to `MANDI_DATA_PROVIDER_MODE=live` as the demonstration of the app refusing to invent an estimate.
+
+### The cleanup pass
+
+- **The two unused ESLint warnings** in `profileAnalysisService.test.ts` were removed by dropping the unused parameter names.
+- **The README's environment block** was reconciled with `backend/.env.example`: `AI_BASE_URL` and `AI_ENABLE_NARRATIVE` are commented out in the example, so they are commented out in the README too, and the note says why.
+- **No dependency was added, removed, or upgraded.** `npm ls --workspaces --depth=0` confirms every declared package is used: `react`, `react-dom`, `react-router-dom`, and `uplot` in the frontend; `next`, `zod`, the Prisma packages, and the React packages Next.js needs in the backend.
+- **No debug statement, TODO, FIXME, or temporary file was found** in `frontend/src`, `backend/src`, or `backend/prisma`. The only `console.log` calls are in the two Prisma command-line scripts, where they are the output.
+- **Every documented command exists.** All fifteen root scripts in `package.json` are listed in the README's command table, together with the two production-server scripts and the troubleshooting table.
+- **The temporary verification harnesses** live in `.phase9-verify/` and were moved out of the repository root before the end, so the working tree holds only project files.
+
+### The final verification suite
+
+Everything below was re-run after the last code change, against the final production build:
+
+| Check | Command | Result |
+| ----- | ------- | ------ |
+| Backend unit tests | `npm run test` (backend) | 180 passed, 0 failed |
+| Frontend unit tests | `npm run test` (frontend) | 27 passed, 0 failed |
+| Database verification | `npm run db:verify` | 57 PASS, 0 FAIL |
+| Backend type check | `npm run typecheck:backend` | exit 0 |
+| Frontend type check | `npm run typecheck:frontend` | exit 0 |
+| Backend lint | `npm run lint:backend` | exit 0, 0 warnings |
+| Frontend lint | `npm run lint:frontend` | exit 0, 0 warnings |
+| Backend production build | `npm run build:backend` | exit 0, route table correct |
+| Frontend production build | `npm run build:frontend` | exit 0, 373.64 kB JS / 122.88 kB gzip |
+| HTTP regression | 107 assertions against `next start` | 0 failures |
+| Browser regression | 88 assertions at 375 / 768 / 1280 px | 0 failures |
+| SSG check | two requests plus the on-disk artifact | byte-identical, and equal to the artifact |
+| SSR check | two requests | different on every request |
+| Secret scan of `frontend/dist` | 4 files | 0 hits |
+| Mermaid structure | the diagram parser | 8 of 8 blocks pass |
+| `npm audit` | `npm audit --omit=dev` | **BLOCKED**: the sandbox cannot reach the npm registry |
+
+### Known limits of this phase
+
+- **`npm audit` could not be run**, so no claim is made about the vulnerability count. The dependency tree was checked instead, and nothing was changed.
+- **The Mermaid diagrams were checked structurally, not rendered.** They follow the documented syntax, but a renderer was not available offline to prove the output.
+- **The live data.gov.in path was not re-exercised**, because the outbound network is blocked in this environment. It was confirmed against the real upstream in Phase 5 and Phase 8 and has not changed since.
+- **The AI narrative provider has still never run against a real provider**, because no key is configured and none is needed.
+- **The root `.git` is still not writable from this environment**, so the Phase 8, Phase 9, and Phase 10 work is **not staged or committed**. The user needs to commit it.
 
 ## Blockers and Decisions Log
 
@@ -392,23 +534,21 @@
 | 2026-11-06 | Phase 8 | A farmer's own district may have no price records at all, so the analysis has to use a market from another district. | The market is still chosen deterministically (own district first, then most observations, then name) and a caveat is added naming the market and district that were used, so the farmer is told to check their own market. The alternative, refusing to show anything, would hide real evidence for no good reason. |
 | 2026-11-06 | Phase 8 | The Phase 2 SSG demonstration page still claimed the database was "added in a later phase" and that no live provider was connected. | Both statements had been false since Phases 4 and 5. The two fact lines were corrected to describe the current state, the same treatment the Phase 2 dashboard claims received in Phase 6. SSG is still byte-identical between two requests and SSR still changes per request. |
 | 2026-11-07 | Phase 8 | The trend and the forecast labelled a series from its **first** record, so a series that the live provider answered partly from its page cache (`RECENT`) and partly fresh (`LIVE`) could have been shown as `Live`. | The label is now derived from every observation actually used, and it is conservative: a seeded row always wins (demo data is never called live), a cached row wins over a fresh one (a partly cached series is `RECENT`), and dropped rows cannot decide it. Two unit tests cover the mixed cases; the HTTP and browser runs were repeated after the fix and still pass. |
+| 2026-11-07 | Phase 9 | **SECURITY:** `GET /api/farm-profile/latest` returned the most recently saved farmer profile to anybody who asked. On a shared or deployed backend, one farmer's state, district, soil type, and land area could be read by every other visitor. CORS is not authentication. | The route was **deleted** and replaced by `GET /api/farm-profile/analysis`, which requires the unguessable per-profile access token that `POST /api/farm-profile/analyze` hands out once. Only the SHA-256 hash of the token is stored, the browser keeps the raw token in session storage, and the profile responses are sent with `Cache-Control: no-store`. No account system was invented, and the demo workflow still works end to end. |
+| 2026-11-07 | Phase 9 | The forecast range was described as "an approximate 80 percent band" and the UI called the data quality "High confidence", which promises more than a standard-error band around a fitted line can establish. | The method string now states that the band is **not** a calibrated prediction interval, that it leaves out the uncertainty of the fitted line, and that it does not widen with the distance the line is read beyond the last observation. The UI wording became **Good evidence** / **Fair evidence** / **Weak evidence**. The forecast threshold itself was not weakened. |
+| 2026-11-07 | Phase 9 | The analysis panel headings jumped from `h2` to `h4`, and the crop-suggestions page announced nothing when the result arrived. | The headings are now `h3`, and a visually hidden `role="status"` region announces the result. Both were re-checked at 375, 768, and 1280 px. |
+| 2026-11-07 | Phase 9 | `parseJsonBody` only checked the body size when the request declared a `content-length`, so a chunked request of any size was accepted. | The body is measured again after it has been read, and a unit test covers the streamed case. |
+| 2026-11-07 | Phase 9 | The sandbox cannot reach the npm registry, so `npm audit` failed with "audit endpoint returned an error". | The result is recorded as blocked rather than as a clean audit. `npm ls --workspaces --depth=0` was run instead and confirms every declared dependency is used. No package was added, removed, or upgraded. |
+| 2026-11-07 | Phase 10 | The README was written before Phase 9 and described the removed `latest` route and the old forecast wording. | The README was brought in line with the code: the route table, the endpoint section, the privacy section, the project layout, the forecast paragraph, and the environment block were all updated, and the problem statement, solution, features, technology stack, demonstration workflow, troubleshooting table, and project-wide known-limitations list were added. |
+| 2026-11-07 | Phase 10 | No architecture document existed, and the phase asks for diagrams. | `ARCHITECTURE.md` was created with 8 Mermaid diagrams. They are checked structurally by a parser (known type, balanced brackets, closed subgraphs), because no Mermaid renderer is available offline. |
 
 ## Session Handoff
 
 At the end of every coding-agent session, replace this note with a short update:
 
-- **Last completed phase:** Phase 8 - Crop Suitability and Selling-Period Insights (2026-11-06, 9 of 9 complete)
-- **Current phase:** Phase 9 - Integration, Security, Accessibility, and Quality Checks (not started)
-- **Checks run and results (Phase 8):** `npm run test` (exit 0, **199 passed / 0 failed**: 172 backend, 27 frontend, up from 117); `npm run db:verify` (exit 0, **49 PASS / 0 FAIL** against the live database, including 7 new crop-rule checks); `npm run typecheck` (exit 0, both apps); `npm run lint` (exit 0, oxlint and ESLint); `npm run build` (exit 0, the route table shows `/api/farm-profile/analyze` and `/api/farm-profile/latest` as dynamic and the Phase 2 pages unchanged; Vite emitted `dist/` at 372.96 kB JS / 122.62 kB gzip); a **72-assertion** live HTTP run against `next start -p 3000` with the real database (0 failures, covering the new analysis block, the excluded-crop reasons, the trend, the forecast threshold and metadata, the `latest` endpoint, CORS, the JSON 404, the SSG/SSR regression, and no secret in any response); a **41-assertion** headless-Chrome run at 375 / 768 / 1280 px, repeated against both the dev server and the production build (0 failures in both, no console errors, no overflow, the ranked suggestions, the trend card, the forecast card, the DEMO badge, the insufficient-data state, a real profile submission, and the Phase 7 dashboard still working); and a **live-mode** run against the real data.gov.in upstream that returned `LIVE` records but only one observation, so both the trend and the forecast correctly returned `insufficient_data` with no number.
-- **Checks run and results (Phase 2):** `npm run typecheck` (exit 0, both apps); `npm run lint` (exit 0, both linters, after fixing the `next/link` violation); `npm run build` (exit 0; Next.js route table shows `/`, `/_not-found`, and `/rendering/ssg` as Static and `/rendering/ssr` as Dynamic; Vite emitted `dist/`); a headless-Chrome DevTools Protocol run against the production build (23 checks, 0 problems) covering all 5 routes at 375/768/1280 px, 1/2/3 column grids, zero horizontal overflow, 0 console errors and warnings, accessibility-tree landmarks, a keyboard skip link with a 3px focus ring, in-app navigation without a page reload, and live retry/reset buttons; and `next start` runtime checks confirming SSG is byte-identical and equal to its on-disk artifact while the SSR timestamp changes per request, and that the Client Component chunk is referenced only by `/`.
-- **Known blockers:** root `.git` still not writable from this environment (permission denied), so nothing is staged or committed; a stale Node process (PID 15460) still holds port 3000 and was deliberately left alone; 5 dev-only npm advisories with no upstream fix; PostgreSQL credentials still unknown; the Next.js rubric question is still unconfirmed, and Phase 2 added three framework-demonstration Server Component pages that the user may want to confirm with the instructor.
-- **Checks run and results (Phase 4):** `npm run db:validate` (schema valid); `npm run db:generate`; `npm run db:deploy` (migration applied to `krishi_mandi`); `npm run db:seed` (run twice, counts identical); `npm run db:verify` (18 PASS, 0 FAIL against the live database); `npm run typecheck` (exit 0); `npm run lint` (exit 0); `npm run test` (28 passed, 0 failed); `npm run build` (exit 0); and a 22-assertion regression run against `next start` and `vite preview` with 0 failures, including a scan proving neither the Prisma client nor the database password appears in the shipped JS or CSS.
-- **Known blockers:** port 3000 is still held by a pre-existing `next dev` server (PID 15460) for this same directory, left running on purpose; the npm registry needs approval from inside the agent sandbox; the Next.js rubric question and the root `.git` write permission are both still open from earlier phases. The database now works, but the app connects as the `postgres` superuser for local development only.
-- **Checks run and results (Phase 5):** `npm run test` (exit 0, **64 passed / 0 failed**, up from 28); `npm run db:verify` (exit 0, **34 PASS / 0 FAIL** against the live database, including 16 new checks for the provider-facing repository queries); `npm run typecheck` (exit 0, both apps); `npm run lint` (exit 0, oxlint and ESLint); `npm run build` (exit 0, Next.js route table shows `/api/mandi-prices`, `/api/markets`, `/api/data-sources` and `/api/health` as dynamic, `/` `/_not-found` `/rendering/ssg` as static); a **68-assertion** live HTTP run in demo mode (**0 failures**); a **40-assertion** live HTTP run with `MANDI_DATA_PROVIDER_MODE=live` against the real data.gov.in resource (**0 failures**, upstream confirmed reachable); a separate HTTP run with the API key blank confirming `503 PROVIDER_NOT_CONFIGURED` and `dataStatus: UNAVAILABLE`; and a regression pass confirming `/api/health`, the JSON `404` catch-all, and the SSG/SSR pages still work.
-- **Known blockers:** the root `.git` still cannot be written to from this environment, so nothing is staged or committed; the npm registry and outbound HTTPS need approval from inside the agent sandbox; the `data.gov.in` API key is per-user and lives only in the git-ignored `backend/.env.local`; the upstream throttles bursts, so live mode can return `503 PROVIDER_RATE_LIMITED`; the upstream publishes no coordinates and no historical series, so neither is available yet; and the Next.js rubric question is still unconfirmed.
-- **Checks run and results (Phase 6):** `npm run test` (exit 0, **87 passed / 0 failed**, up from 64); `npm run db:verify` (exit 0, **42 PASS / 0 FAIL**, including 7 new `FarmProfile` privacy and integrity checks); `npm run typecheck` (exit 0, both apps); `npm run lint` (exit 0, oxlint and ESLint); `npm run build` (exit 0, the Next.js route table shows `/api/farm-profile/analyze` as dynamic and the Phase 2 pages are unchanged); a **51-assertion** live HTTP run against the production build on port 3100 (**0 failures**); a **45-assertion** headless-Chrome run against the real form (**0 failures**); a direct `psql` read proving the rows were stored with the submitted values; a scan proving the shipped frontend bundle contains no database password, provider key, or connection string; and a retention test proving the dry run deletes nothing and `--confirm` removes only the expired row.
-- **Known blockers:** the root `.git` still cannot be written to from this environment, so nothing is staged or committed; the npm registry and outbound HTTPS need approval from inside the agent sandbox; the `data.gov.in` API key is per-user and lives only in the git-ignored `backend/.env.local`; the upstream throttles bursts, so live mode can return `503 PROVIDER_RATE_LIMITED`; the upstream publishes no coordinates and no historical series, so neither is available yet; and the Next.js rubric question is still unconfirmed.
-- **Checks run and results (Phase 7):** `npm run test` (exit 0, **117 passed / 0 failed**: 98 backend, 19 frontend); `npm run db:verify` (exit 0, **42 PASS / 0 FAIL**); `npm run typecheck` (exit 0, both apps); `npm run lint` (exit 0, oxlint and ESLint, 0 warnings); `npm run build` (exit 0, the route table shows `/api/crops` and `/api/mandi-prices/history` as dynamic and the Phase 2 pages unchanged); a **49-assertion** live HTTP run against `next start -p 3100` (0 failures, covering the new endpoints, CORS, the JSON 404, the SSG/SSR regression, and the Phase 6 profile endpoint); and a **60-assertion** headless-Chrome run at 375 / 768 / 1280 px, repeated against both the dev server and the production build (0 failures in both, no console errors, no overflow, the chart drew 7 real points, the filters cascade correctly and switching state works directly, a failed request shows an error instead of demo rows, and the retry button really reloads).
-- **Known blockers (unchanged):** the root `.git` still cannot be written to from this environment, so nothing is staged or committed; the npm registry and outbound HTTPS need approval from inside the agent sandbox; the `data.gov.in` API key is per-user and lives only in the git-ignored `backend/.env.local`; the upstream throttles bursts, so live mode can return `503 PROVIDER_RATE_LIMITED`; the upstream publishes no coordinates and no usable history, so neither a distance nor a live trend chart is available; and the Next.js rubric question is still unconfirmed.
-- **Known blockers (Phase 8):** the root `.git` still cannot be written to from this environment, so the Phase 8 work is **not staged or committed**; the npm registry and outbound HTTPS need approval from inside the agent sandbox; the `data.gov.in` API key is per-user and lives only in the git-ignored `backend/.env.local`; the upstream throttles bursts, so live mode can return `503 PROVIDER_RATE_LIMITED`; the upstream publishes no coordinates and no usable history, so neither a distance nor a live trend chart is available; **no AI provider key is configured, so the optional narrative has never run against a real provider**; and the Next.js rubric question is still unconfirmed.
-- **Next action:** Start Phase 9, which is an integration, security, and accessibility pass over the whole application rather than new features. The work is to test the full path from the farmer's inputs through the API, the services, the database, and back to the UI; confirm that every API input is validated server-side; confirm that no secret reaches a client bundle, a response, or a committed file; confirm the CORS allowlist is still constrained to the configured origins; check the UI is keyboard-operable and passes basic accessibility checks; and re-run lint, type-check, tests, and both production builds. The Phase 8 analysis is the piece to review hardest, because it now spans the React form, the two profile endpoints, five service modules, the provider, and the database.
+- **Last completed phase:** Phase 10 - Final Polish, Documentation, and Demo Readiness (2026-11-07, 8 of 8 complete). Phase 9 was completed the same day, 8 of 8 complete. **Phases 0 to 10 are now all complete.**
+- **Current phase:** none. The project is at its final milestone.
+- **What changed in Phases 9 and 10:** the unsafe `GET /api/farm-profile/latest` was deleted and replaced by `GET /api/farm-profile/analysis`, which needs the per-profile access token that the save response hands out (only its SHA-256 hash is stored, and the browser keeps the raw token in session storage); the forecast method and the UI label were corrected so they no longer promise a calibrated prediction interval; the analysis panel headings and the missing live region were fixed; the request-size check was closed for chunked bodies; the README was brought in line with the code and rewritten around the twenty required topics; `ARCHITECTURE.md` was added with 8 Mermaid diagrams; and a ten-step demo workflow and a troubleshooting table were written.
+- **Checks run and results (Phases 9 and 10, all against the final production build):** `npm run test` (exit 0, **207 passed / 0 failed**: 180 backend, 27 frontend, up from 199); `npm run db:verify` (exit 0, **57 PASS / 0 FAIL** against the live database, up from 49); `npm run typecheck` (exit 0, both apps); `npm run lint` (exit 0, oxlint and ESLint, 0 warnings); `npm run build` (exit 0, the route table shows `/api/farm-profile/analyze` and `/api/farm-profile/analysis` as dynamic, `/api/farm-profile/latest` is gone, and the Phase 2 pages are unchanged; Vite emitted `dist/` at 373.64 kB JS / 122.88 kB gzip); a **107-assertion** live HTTP run against `next start` with the real database (0 failures, covering the whole farmer flow, the token flow, the validation paths, CORS, the JSON 404, the SSG/SSR regression, and no secret in any response); three extra CORS server configurations on separate ports, showing that a wrong allowlist, an unset variable in development, and an unusable value all fail closed; an **88-assertion** headless-Chrome run at 375 / 768 / 1280 px against the production build served by `vite preview` (0 failures, no console errors, no overflow, the landmarks and heading order, every control labelled, a visible focus ring after real keyboard input, the chart's text alternative, and the privacy behaviour of the suggestions page); a direct SSG check (byte-identical between two requests and equal to the on-disk `.next` artifact) and SSR check (different on every request); a secret scan of the 4 shipped `dist` files (0 hits); and a Mermaid structure check (8 of 8 blocks pass).
+- **Known blockers:** the root `.git` still cannot be written to from this environment, so the Phase 8, Phase 9, and Phase 10 work is **not staged or committed** and the user needs to commit it; **`npm audit` could not be run** because the sandbox cannot reach the npm registry, so no vulnerability count is claimed; **the live data.gov.in path was not re-exercised** in Phases 9 and 10 because the outbound network is blocked here (it was confirmed against the real upstream in Phase 5 and Phase 8 and has not changed); **no AI provider key is configured, so the optional narrative has never run against a real provider**; the Mermaid diagrams were checked structurally rather than rendered, because no renderer is available offline; and the Next.js rubric question is still unconfirmed.
+- **Next action:** commit the Phase 8 to Phase 10 work, then run the demo workflow in the README once in front of the class. There is no next development phase.

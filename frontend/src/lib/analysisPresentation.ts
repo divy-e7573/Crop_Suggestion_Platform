@@ -32,11 +32,21 @@ export function trendLabel(direction: TrendDirection): string {
   return 'Not enough data';
 }
 
-/** The short label for the data quality behind an estimate. */
+/**
+ * The short label for the evidence behind an estimate.
+ *
+ * The wording deliberately talks about the evidence and not about
+ * confidence in the outcome. The forecast is a straight line read one week
+ * beyond the last observation, and the range around it is the usual
+ * day-to-day spread of the observed prices around that line. Saying
+ * "high confidence" would promise more than that calculation can
+ * establish (AGENTS.md section 3), so the label names the strength of the
+ * evidence instead.
+ */
 export function qualityLabel(quality: ForecastDto['dataQuality']): string {
-  if (quality === 'high') return 'High confidence';
-  if (quality === 'medium') return 'Medium confidence';
-  if (quality === 'low') return 'Low confidence';
+  if (quality === 'high') return 'Good evidence';
+  if (quality === 'medium') return 'Fair evidence';
+  if (quality === 'low') return 'Weak evidence';
   return 'No estimate';
 }
 

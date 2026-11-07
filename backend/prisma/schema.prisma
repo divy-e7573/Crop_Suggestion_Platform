@@ -284,6 +284,16 @@ model FarmProfile {
 
   createdAt DateTime @default(now()) @db.Timestamptz(3)
 
+  /// Hash of the unguessable token that authorises reading this profile
+  /// back (Phase 9 privacy review).
+  ///
+  /// The raw token is returned once, to the browser that submitted the
+  /// profile, and is never stored. Only its SHA-256 hash is kept, so a copy
+  /// of the database cannot be used to read anyone's profile. NULL means the
+  /// profile has no token, which happens only for rows created before this
+  /// column existed.
+  analysisTokenHash String? @unique @db.VarChar(64)
+
   @@index([state])
   @@index([district, state])
   @@index([createdAt])

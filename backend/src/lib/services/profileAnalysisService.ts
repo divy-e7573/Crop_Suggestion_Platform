@@ -91,6 +91,13 @@ export type ProfileAnalysisResult = {
  */
 export type FarmProfileAnalysisDto = {
   profileId: string;
+  /**
+   * The unguessable token that authorises reading this profile back.
+   *
+   * It is returned once, here, and only its hash is stored
+   * (Phase 9 privacy review). The browser keeps it in session storage.
+   */
+  analysisToken: string;
   savedAt: string;
   profile: FarmProfileDto;
   matchingData: MatchingDataDto;
@@ -113,9 +120,9 @@ export type FarmProfileAnalysisDto = {
  * The analysis never uses it, and the crop-suggestions page does not need
  * it, so it is not repeated in a second response (PRD section 13).
  */
-export type LatestProfileAnalysisDto = {
-  profileId: string | null;
-  savedAt: string | null;
+export type SavedProfileAnalysisDto = {
+  profileId: string;
+  savedAt: string;
   profile: {
     state: string;
     district: string;
@@ -126,7 +133,7 @@ export type LatestProfileAnalysisDto = {
     landAreaInAcres: number;
     irrigationType: string | null;
     currentCrop: string | null;
-  } | null;
+  };
   analysis: {
     status: ProfileAnalysisStatus;
     message: string;
